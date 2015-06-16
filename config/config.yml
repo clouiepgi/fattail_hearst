@@ -1,0 +1,37 @@
+parameters:
+  logger.level.debug: 100
+  logger.level.info: 200
+  logger.level.warn: 300
+
+  logger.level: %logger.level.info%
+
+services:
+    logger.processor.proc:
+        class: Monolog\Processor\ProcessIdProcessor
+
+    logger.processor.mem:
+        class: Monolog\Processor\MemoryUsageProcessor
+
+    logger.handler.default:
+        class: Monolog\Handler\ErrorLogHandler
+        arguments: [0, %logger.level%]
+
+    logger.default:
+      class: Monolog\Logger
+      arguments: ["cd-fattail"]
+      calls:
+        - [pushProcessor, ["@logger.processor.mem"]]
+        - [pushProcessor, ["@logger.processor.proc"]]
+        - [pushHandler, ["@logger.handler.default"]]
+
+
+    console.command.sync:
+      class: CentralDesktop\FatTail\SyncCommand
+      calls:
+        - [setLogger, ["@logger.default"]]
+
+
+    console.application:
+      class: Symfony\Component\Console\Application
+      calls:
+        - [add, [@console.command.sync]]
