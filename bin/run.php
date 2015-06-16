@@ -3,7 +3,6 @@
 require_once("vendor/autoload.php");
 
 
-use CentralDesktop\FatTail\SynCommand;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
