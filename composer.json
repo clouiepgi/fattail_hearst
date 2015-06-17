@@ -9,7 +9,6 @@
   "bin":      [
     "bin/run.php"
   ],
-
   "require":  {
     "php":                          ">=5.5.0",
     "ext-mbstring":                 "*",
@@ -18,7 +17,7 @@
     "symfony/config":               "^2.7",
     "symfony/yaml":                 "^2.7",
     "league/csv":                   "^7.1",
-    "monolog/monolog": "^1.13"
+    "monolog/monolog":              "^1.13"
   },
   "autoload": {
     "psr-4": {
