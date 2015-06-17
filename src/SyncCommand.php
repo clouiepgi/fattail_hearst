@@ -9,7 +9,7 @@
 namespace CentralDesktop\FatTail;
 
 
-use CentralDesktop\FatTail\Services\Auth\EdgeAuth;
+use CentralDesktop\FatTail\Services\Client\EdgeClient;
 use Psr\Log\LoggerAwareTrait;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -19,12 +19,12 @@ use Symfony\Component\Console\Output\OutputInterface;
 class SyncCommand extends Command {
     use LoggerAwareTrait;
 
-    protected $edgeAuth;
+    protected $edgeClient;
 
     public
-    function __construct(EdgeAuth $edgeAuth) {
+    function __construct(EdgeClient $edgeClient) {
         parent::__construct();
-        $this->edgeAuth = $edgeAuth;
+        $this->edgeClient = $edgeClient;
     }
 
 
@@ -40,6 +40,12 @@ class SyncCommand extends Command {
     function execute(InputInterface $input, OutputInterface $output) {
         $this->logger->info("Running sync");
 
-        print_r($this->edgeAuth->getAccessToken());
+        print_r($this->edgeClient->call(
+            EdgeClient::$METHOD_GET,
+            'users',
+            [
+                'contextId' => 67452
+            ]
+        ));
     }
 }
