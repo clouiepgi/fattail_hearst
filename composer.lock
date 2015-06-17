@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "hash": "a981ab0c6e7ea4fc1d3e4d2dbe8e574e",
+    "hash": "3f5b64553dd0277e0781527d8f9127db",
     "packages": [
         {
             "name": "firebase/php-jwt",
@@ -350,6 +350,49 @@
                 "psr-3"
             ],
             "time": "2015-03-09 09:58:04"
+        },
+        {
+            "name": "osucomm/ws-soap",
+            "version": "0.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/osucomm/WsSoap.git",
+                "reference": "e776906654152e2d3f4aeff09f3f53a45f314c92"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/osucomm/WsSoap/zipball/e776906654152e2d3f4aeff09f3f53a45f314c92",
+                "reference": "e776906654152e2d3f4aeff09f3f53a45f314c92",
+                "shasum": ""
+            },
+            "require": {
+                "ext-curl": "*",
+                "ext-soap": "*",
+                "php": ">=5.3.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "WsSoap\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Corey Hinshaw",
+                    "email": "hinshaw.25@osu.edu"
+                }
+            ],
+            "description": "Extends the PHP SOAP client to add basic WSSE support",
+            "homepage": "https://github.com/osucomm/WsSoap",
+            "keywords": [
+                "soap",
+                "soap-client"
+            ],
+            "time": "2014-05-15 03:55:26"
         },
         {
             "name": "psr/http-message",
