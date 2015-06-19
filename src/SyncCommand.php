@@ -19,12 +19,14 @@ use Symfony\Component\Console\Output\OutputInterface;
 class SyncCommand extends Command {
     use LoggerAwareTrait;
 
-    protected $syncService;
+    protected $syncService = null;
+    protected $reportName = '';
 
     public
-    function __construct(SyncService $syncService) {
+    function __construct(SyncService $syncService, $reportName) {
         parent::__construct();
         $this->syncService = $syncService;
+        $this->reportName = $reportName;
     }
 
 
@@ -40,6 +42,6 @@ class SyncCommand extends Command {
     function execute(InputInterface $input, OutputInterface $output) {
         $this->logger->info("Running sync");
 
-        $this->syncService->sync();
+        $this->syncService->sync($this->reportName);
     }
 }

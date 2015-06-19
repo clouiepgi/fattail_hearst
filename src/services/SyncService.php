@@ -38,7 +38,7 @@ class SyncService {
      * Syncs Edge and FatTail.
      */
     public
-    function sync() {
+    function sync($reportName = '') {
 
         // Get all saved reports
         $reportListResult = $this
@@ -48,136 +48,153 @@ class SyncService {
                             ->GetSavedReportListResult
                             ->SavedReport;
 
-        // Iterate over report list
-        foreach ($reportList as $report) {
-
-            $csvPath = $this->downloadReportCSV(
-                $report,
-                $this->tmpDir
-            );
-
-            $reader = Reader::createFromPath($csvPath);
-            $rows = $reader->fetchAll();
-
-            // Create mapping of column name with column index
-            // Not necessary, but makes it easier to work with the data
-            // can remove if optimization issues arise
-            $colMap = [];
-            foreach ($rows[0] as $index => $name) {
-                $colMap[$name] = $index;
-            }
-
-            // Iterate over CSV and process data
-            for ($i = 1, $len = count($rows); $i < $len; $i++) {
-                $row = $rows[$i];
-
-                // Get client details
-                $clientId = $row[$colMap['Client ID']];
-                $client = $this->fattailClient->call(
-                    'GetClient',
-                    ['clientId' => $clientId]
-                )->GetClientResult;
-
-                // Get order details
-                $orderId = $rows[$i][$colMap['Campaign ID']];
-                $order = $this->fattailClient->call(
-                    'GetOrder',
-                    ['orderId' => $orderId]
-                )->GetOrderResult;
-
-                // Get drop details
-                $dropId = $rows[$i][$colMap['Drop ID']];
-                $drop = $this->fattailClient->call(
-                    'GetDrop',
-                    ['dropId' => $dropId]
-                )->GetDropResult;
-
-                // Check client to account sync
-                $accountHash = $client->ExternalID;
-                if ($accountHash === "") {
-
-                    $customFields = [
-                        'c_client_id' => $clientId
-                    ];
-                    $accountHash = $this->createCDAccount(
-                        $client->Name,
-                        $customFields
-                    );
-
-                    // Update client external id with new account hash
-                    $client->ExternalID = $accountHash;
-                }
-
-                // Check order to workspace sync
-                $workspaceHash = $rows[$i][$colMap['(Campaign) CD Workspace ID']];
-                if ($workspaceHash === "") {
-
-                    $customFields = [
-                        'c_order_id'            => $orderId,
-                        'c_campaign_status'     => $rows[$i][$colMap['IO Status']],
-                        'c_campaign_start_date' => $rows[$i][$colMap['Campaign Start Date']],
-                        'c_campaign_end_date'   => $rows[$i][$colMap['Campaign End Date']]
-                    ];
-                    $workspaceHash = $this->createCDWorkspace(
-                        $accountHash,
-                        $rows[$i][$colMap['Campaign Name']]
-                    );
-
-                    // TODO Gets sales rep information
-                    // and set role for account
-
-                }
-                exit;
-
-                // Check drop to milestone sync
-                $milestoneHash = $rows[$i][$colMap['(Drop) CD Milestone ID']];
-                if ($milestoneHash === "") {
-
-                    $customFields = [
-                        'c_drop_id'              => $dropId,
-                        'c_custom_unit_features' => $rows[$i][$colMap['(Drop) Custom Unit Features']],
-                        'c_kpi'                  => $rows[$i][$colMap['(Drop) Line Item KPI']],
-                        'c_drop_cost_new'        => $rows[$i][$colMap['Sold Amount']]
-                    ];
-                    $milestoneHash = $this->createCDMilestone(
-                        $workspaceHash,
-                        $rows[$i][$colMap['Position Path']],
-                        $rows[$i][$colMap['Drop Description']],
-                        $rows[$i][$colMap['Start Date']],
-                        $rows[$i][$colMap['End Date']],
-                        $customFields
-                    );
-
-                    // TODO Update drop with new milestone hash
-                }
-                else {
-                    // TODO Update milestone
-                }
-
-                // TODO update on client, order, and drop
-                // Update FatTail client
-                /*$clientArray = $this->convertToArrays($client);
-                $this->fattailClient->call(
-                    'UpdateClient',
-                    ['client' => $clientArray]
-                );*/
-
-                // Update FatTail order
-                /*$orderArray = $this->convertToArrays($order);
-                $this->fattailClient->call(
-                    'UpdateOrder',
-                    ['order' => $order]
-                );*/
-
-                // Update FatTail drop
-                /*$dropArray = $this->convertToArrays($drop);
-                $this->fattailClient->call(
-                    'UpdateDrop',
-                    ['drop' => $drop]
-                );*/
-                $this->cleanUp($this->tmpDir);
+        // Find the specific report
+        $report = null;
+        foreach ($reportList as $reportItem) {
+            if ($reportItem->Name === $reportName) {
+                $report = $reportItem;
             }
         }
+
+        if ($report === null) {
+            // TODO
+            die("Unable to find requested report\n");
+        }
+
+        print_r("Starting report processing\n");
+        $csvPath = $this->downloadReportCSV(
+            $report,
+            $this->tmpDir
+        );
+        print_r("Ending CSV download\n");
+
+        $reader = Reader::createFromPath($csvPath);
+        $rows = $reader->fetchAll();
+
+        // Create mapping of column name with column index
+        // Not necessary, but makes it easier to work with the data
+        // can remove if optimization issues arise
+        $colMap = [];
+        foreach ($rows[0] as $index => $name) {
+            $colMap[$name] = $index;
+        }
+
+        // Iterate over CSV and process data
+        // Skip the first and last rows since they
+        // dont have the data we need
+        for ($i = 1, $len = count($rows) - 1; $i < $len; $i++) {
+            $row = $rows[$i];
+
+            print_r("Getting Client\n");
+            // Get client details
+            $clientId = $row[$colMap['Client ID']];
+            $client = $this->fattailClient->call(
+                'GetClient',
+                ['clientId' => $clientId]
+            )->GetClientResult;
+
+            print_r("Getting Order\n");
+            // Get order details
+            $orderId = $rows[$i][$colMap['Campaign ID']];
+            $order = $this->fattailClient->call(
+                'GetOrder',
+                ['orderId' => $orderId]
+            )->GetOrderResult;
+
+            print_r("Getting Drop\n");
+            // Get drop details
+            $dropId = $rows[$i][$colMap['Drop ID']];
+            $drop = $this->fattailClient->call(
+                'GetDrop',
+                ['dropId' => $dropId]
+            )->GetDropResult;
+
+            // Check client to account sync
+            $accountHash = $client->ExternalID;
+            if ($accountHash === "") {
+
+                $customFields = [
+                    'c_client_id' => $clientId
+                ];
+                /*$accountHash = $this->createCDAccount(
+                    $client->Name,
+                    $customFields
+                );*/
+
+                // Update client external id with new account hash
+                $client->ExternalID = $accountHash;
+            }
+
+            // Check order to workspace sync
+            $workspaceHash = $rows[$i][$colMap['(Campaign) CD Workspace ID']];
+            if ($workspaceHash === "") {
+
+                $customFields = [
+                    'c_order_id'            => $orderId,
+                    'c_campaign_status'     => $rows[$i][$colMap['IO Status']],
+                    'c_campaign_start_date' => $rows[$i][$colMap['Campaign Start Date']],
+                    'c_campaign_end_date'   => $rows[$i][$colMap['Campaign End Date']]
+                ];
+                /*$workspaceHash = $this->createCDWorkspace(
+                    $accountHash,
+                    $rows[$i][$colMap['Campaign Name']]
+                );*/
+
+                // TODO Gets sales rep information
+                // and set role for account
+            }
+
+            // Check drop to milestone sync
+            $milestoneHash = $rows[$i][$colMap['(Drop) CD Milestone ID']];
+            if ($milestoneHash === "") {
+
+                $customFields = [
+                    'c_drop_id'              => $dropId,
+                    'c_custom_unit_features' => $rows[$i][$colMap['(Drop) Custom Unit Features']],
+                    'c_kpi'                  => $rows[$i][$colMap['(Drop) Line Item KPI']],
+                    'c_drop_cost_new'        => $rows[$i][$colMap['Sold Amount']]
+                ];
+                /*$milestoneHash = $this->createCDMilestone(
+                    $workspaceHash,
+                    $rows[$i][$colMap['Position Path']],
+                    $rows[$i][$colMap['Drop Description']],
+                    $rows[$i][$colMap['Start Date']],
+                    $rows[$i][$colMap['End Date']],
+                    $customFields
+                );*/
+
+                // TODO Update drop with new milestone hash
+            }
+            else {
+                // TODO Update milestone
+            }
+
+            // TODO update on client, order, and drop
+            // Update FatTail client
+            /*$clientArray = $this->convertToArrays($client);
+            $this->fattailClient->call(
+                'UpdateClient',
+                ['client' => $clientArray]
+            );*/
+
+            // Update FatTail order
+            /*$orderArray = $this->convertToArrays($order);
+            $this->fattailClient->call(
+                'UpdateOrder',
+                ['order' => $order]
+            );*/
+
+            // Update FatTail drop
+            /*$dropArray = $this->convertToArrays($drop);
+            $this->fattailClient->call(
+                'UpdateDrop',
+                ['drop' => $drop]
+            );*/
+        }
+        print_r("Ended processing report\n");
+        print_r("Cleaning up CSV reports\n");
+        $this->cleanUp($this->tmpDir);
+        print_r("Finished cleaning up CSV reports\n");
     }
 
     /**
@@ -282,7 +299,7 @@ class SyncService {
         $httpResponse = null;
         try {
             $httpResponse = $this->edgeClient->call(
-                EdgeClient::$METHOD_POST,
+                EdgeClient::METHOD_POST,
                 $path,
                 [],
                 $details
@@ -336,7 +353,7 @@ class SyncService {
 
         // Call accounts endpoint to get the latest hash/id
         $response = $this->edgeClient->call(
-            EdgeClient::$METHOD_GET,
+            EdgeClient::METHOD_GET,
             $path
         );
         $accounts = json_decode($response->getBody());
@@ -384,7 +401,7 @@ class SyncService {
 
         // TODO on successful creation of workspace
         /*$response = $this->edgeClient->call(
-            EdgeClient::$METHOD_GET,
+            EdgeClient::METHOD_GET,
             $path
         );
         $workspaces = json_decode($response->getBody());
@@ -435,7 +452,7 @@ class SyncService {
 
         // Call workspaces endpoint to get the latest hash
         $response = $this->edgeClient->call(
-            EdgeClient::$METHOD_GET,
+            EdgeClient::METHOD_GET,
             $path
         );
         $workspaces = json_decode($response->getBody());

@@ -17,10 +17,9 @@ class EdgeClient {
     protected $httpClient  = null;
     protected $accessToken = null;
     protected $baseURL = null;
-    protected $contextId = 67452; // TODO should be found out dynamically
-    public static $METHOD_GET = 'get';
-    public static $METHOD_POST = 'post';
-    public static $METHOD_DELETE = 'delete';
+    const METHOD_GET = 'get';
+    const METHOD_POST = 'post';
+    const METHOD_DELETE = 'delete';
 
     public
     function __construct(
@@ -41,8 +40,6 @@ class EdgeClient {
         if ($this->accessToken === null) {
             $this->accessToken = $this->authClient->getAccessToken();
         }
-
-        // TODO get the context id of user
     }
 
     /**
@@ -63,10 +60,10 @@ class EdgeClient {
         // Make call based on method type
         $method = strtolower($method);
         switch ($method) {
-            case EdgeClient::$METHOD_POST:
+            case EdgeClient::METHOD_POST:
                 $httpResponse = $this->httpClient->post($url, $reqData);
                 break;
-            case EdgeClient::$METHOD_DELETE:
+            case EdgeClient::METHOD_DELETE:
                 $httpResponse = $this->httpClient->delete($url, $reqData);
                 break;
             default:
@@ -123,12 +120,8 @@ class EdgeClient {
         ];
 
         // Set a default context Id based on initialization
-        $request['query'] = ['contextId' => $this->contextId];
         if ($queryParams !== null) {
-            $request['query'] = array_merge(
-                $request['query'],
-                $queryParams
-            );
+            $request['query'] = $queryParams;
         }
         if ($jsonData !== null) {
             $request['json'] = $jsonData;
