@@ -45,7 +45,7 @@ class EdgeAuth {
      * Gets the access token for use with CD edge.
      */
     public
-    function getAccessToken() {
+    function get_access_token() {
         $user = [
             "iss" => $this->client_id,
             "aud" => $this->issuer,
@@ -75,7 +75,7 @@ class EdgeAuth {
             $access_token = $json_response->access_token;
         }
         catch (\GuzzleHttp\Exception\RequestException $e) {
-            $this->logger->error('Bad http request made.');
+            $this->logger->error('Bad http authentication request made.');
             if ($e->getResponse()) {
                 $this->logger->error($e->getResponse());
             }
@@ -83,7 +83,7 @@ class EdgeAuth {
             exit;
         }
         catch (\Exception $e) {
-            $this->logger->error('Bad http request made.');
+            $this->logger->error('Bad http authentication request made.');
             $this->logger->error($e);
             $this->logger->error('Exiting.');
             exit;

@@ -19,10 +19,10 @@ class EdgeClient {
     protected $auth_client  = null;
     protected $http_client  = null;
     protected $access_token = null;
-    protected $base_url = null;
-    const METHOD_GET = 'get';
-    const METHOD_POST = 'post';
-    const METHOD_DELETE = 'delete';
+    protected $base_url     = null;
+    const     METHOD_GET    = 'get';
+    const     METHOD_POST   = 'post';
+    const     METHOD_DELETE = 'delete';
 
     public
     function __construct(
@@ -32,7 +32,7 @@ class EdgeClient {
     ) {
         $this->auth_client = $edge_auth;
         $this->http_client = $http_client;
-        $this->base_url = $base_url;
+        $this->base_url    = $base_url;
     }
 
     /**
@@ -41,7 +41,7 @@ class EdgeClient {
     public
     function init() {
         if ($this->access_token === null) {
-            $this->access_token = $this->auth_client->getAccessToken();
+            $this->access_token = $this->auth_client->get_access_token();
         }
     }
 
@@ -57,8 +57,8 @@ class EdgeClient {
     function call($method, $path, $query_params = null, $formParams = null) {
 
         // Get URL and header information
-        $url = $this->getURL($path);
-        $reqData = $this->prepareRequestData($query_params, $formParams);
+        $url = $this->get_url($path);
+        $reqData = $this->prepare_request_data($query_params, $formParams);
 
         // Make call based on method type
         $method = strtolower($method);
@@ -83,7 +83,7 @@ class EdgeClient {
      * @return The complete URL to the resource.
      */
     private
-    function getURL($path) {
+    function get_url($path) {
 
         return $this->base_url . $path;
     }
@@ -94,7 +94,7 @@ class EdgeClient {
      * @return an array representing the header keys and values
      */
     private
-    function getHeaders() {
+    function get_headers() {
 
         if (!$this->access_token) {
              $this->init();
@@ -114,9 +114,9 @@ class EdgeClient {
      * @return An array representing the request data.
      */
     private
-    function prepareRequestData($query_params = null, $json_date = null) {
+    function prepare_request_data($query_params = null, $json_date = null) {
 
-        $headers = $this->getHeaders();
+        $headers = $this->get_headers();
 
         $request = [
              'headers' => $headers
