@@ -17,6 +17,7 @@ class EdgeClient {
     protected $httpClient  = null;
     protected $accessToken = null;
     protected $baseURL = null;
+    protected $contextId = 67452; // TODO should be found out dynamically
     public static $METHOD_GET = 'get';
     public static $METHOD_POST = 'post';
     public static $METHOD_DELETE = 'delete';
@@ -40,6 +41,8 @@ class EdgeClient {
         if ($this->accessToken === null) {
             $this->accessToken = $this->authClient->getAccessToken();
         }
+
+        // TODO get the context id of user
     }
 
     /**
@@ -70,7 +73,7 @@ class EdgeClient {
                 $httpResponse = $this->httpClient->get($url, $reqData);
         }
 
-        return json_decode($httpResponse->getBody());
+        return $httpResponse;
     }
 
     /**
@@ -106,12 +109,12 @@ class EdgeClient {
      * Prepares the request data for a request.
      *
      * @param $queryParams The query string parameters for the request.
-     * @param $formParams The form data for the request.
+     * @param $jsonData The JSON data in PHP format for the request.
      *
      * @return An array representing the request data.
      */
     private
-    function prepareRequestData($queryParams = null, $formParams = null) {
+    function prepareRequestData($queryParams = null, $jsonData = null) {
 
         $headers = $this->getHeaders();
 
@@ -119,11 +122,16 @@ class EdgeClient {
              'headers' => $headers
         ];
 
+        // Set a default context Id based on initialization
+        $request['query'] = ['contextId' => $this->contextId];
         if ($queryParams !== null) {
-            $request['query'] = $queryParams;
+            $request['query'] = array_merge(
+                $request['query'],
+                $queryParams
+            );
         }
-        if ($formParams !== null) {
-            $request['form_params'] = $formParams;
+        if ($jsonData !== null) {
+            $request['json'] = $jsonData;
         }
 
         return $request;
