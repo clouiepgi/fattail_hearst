@@ -16,19 +16,22 @@ use League\Csv\Reader;
 
 class SyncService {
 
-    protected $edgeClient = null;
+    protected $edgeClient    = null;
     protected $fattailClient = null;
 
     private $PING_INTERVAL = 5; // In seconds
-    private $DONE = 'done';
+    private $DONE          = 'done';
+    private $tmpDir        = 'tmp/';
 
     public
     function __construct(
         EdgeClient $edgeClient,
-        FatTailClient $fattailClient
+        FatTailClient $fattailClient,
+        $tmpDir = ''
     ) {
-        $this->edgeClient = $edgeClient;
+        $this->edgeClient    = $edgeClient;
         $this->fattailClient = $fattailClient;
+        $this->tmpDir        = $tmpDir;
     }
 
     /**
@@ -38,85 +41,63 @@ class SyncService {
     function sync() {
 
         // Get all saved reports
-        $reportListResult = $this->fattailClient->call('GetSavedReportList');
-        $reportList = $reportListResult->GetSavedReportListResult->SavedReport;
+        $reportListResult = $this
+                            ->fattailClient
+                            ->call('GetSavedReportList');
+        $reportList       = $reportListResult
+                            ->GetSavedReportListResult
+                            ->SavedReport;
 
         // Iterate over report list
         foreach ($reportList as $report) {
 
-            // Get individual report details
-            /*$savedReportQuery = $this->fattailClient->call(
-                'GetSavedReportQuery',
-                [ 'savedReportId' => $report->SavedReportID ]
-            )->getSavedReportQueryResult;
-
-            // Get the report parameters
-            $reportQuery = $savedReportQuery->ReportQuery;
-            $reportQuery = ['ReportQuery' => $reportQuery];
-            // Convert entirely to use only arrays, no objects
-            $reportQueryFormatted = $this->convertToArrays($reportQuery);
-
-            // Format them so they work with SOAP calls
-            //$paramList = $this->formatReportParams($reportParams);
-
-            // Run reports jobs
-            $runReportJob = $this->fattailClient->call(
-                'RunReportJob',
-                ['reportJob' => $reportQueryFormatted]
-            )->RunReportJobResult;
-            $reportJobId = $runReportJob->ReportJobID;
-
-            // Ping report job until status is 'Done'
-            $done = false;
-            while(!$done) {
-                sleep($this->PING_INTERVAL);
-
-                $reportJob = $this->fattailClient->call(
-                    'GetReportJob',
-                    ['reportJobId' => $reportJobId]
-                )->GetReportJobResult;
-
-                if (strtolower($reportJob->Status) === $this->DONE) {
-                    $done = true;
-                }
-            }
-
-            $reportURLResult = $this->fattailClient->call(
-                'GetReportDownloadUrl',
-                ['reportJobId' => $reportJobId]
+            $csvPath = $this->downloadReportCSV(
+                $report,
+                $this->tmpDir
             );
-            $reportURL = $reportURLResult->GetReportDownloadURLResult;
 
-            // Download the file
-            file_put_contents('tmp.csv', fopen($reportURL, 'r'));*/
-
-            $reader = Reader::createFromPath('tmp.csv');
+            $reader = Reader::createFromPath($csvPath);
             $rows = $reader->fetchAll();
 
             // Create mapping of column name with column index
             // Not necessary, but makes it easier to work with the data
+            // can remove if optimization issues arise
             $colMap = [];
             foreach ($rows[0] as $index => $name) {
                 $colMap[$name] = $index;
             }
 
-            // Iterate over CSV data extracting relevant parts
-            $relevantData = [];
+            // Iterate over CSV and process data
             for ($i = 1, $len = count($rows); $i < $len; $i++) {
                 $row = $rows[$i];
 
-                // Get client details to check external id
+                // Get client details
+                $clientId = $row[$colMap['Client ID']];
                 $client = $this->fattailClient->call(
                     'GetClient',
-                    ['clientId' => $row[$colMap['Client ID']]]
+                    ['clientId' => $clientId]
                 )->GetClientResult;
 
+                // Get order details
+                $orderId = $rows[$i][$colMap['Campaign ID']];
+                $order = $this->fattailClient->call(
+                    'GetOrder',
+                    ['orderId' => $orderId]
+                )->GetOrderResult;
+
+                // Get drop details
+                $dropId = $rows[$i][$colMap['Drop ID']];
+                $drop = $this->fattailClient->call(
+                    'GetDrop',
+                    ['dropId' => $dropId]
+                )->GetDropResult;
+
                 // Check client to account sync
-                $accountHash = null;
-                if ($client->ExternalID === "") {
+                $accountHash = $client->ExternalID;
+                if ($accountHash === "") {
 
                     $customFields = [
-                        'c_client_id' => $row[$colMap['Client ID']]
+                        'c_client_id' => $clientId
                     ];
                     $accountHash = $this->createCDAccount(
                         $client->Name,
@@ -125,49 +106,38 @@ class SyncService {
 
                     // Update client external id with new account hash
                     $client->ExternalID = $accountHash;
-
-                    // Update FatTail client
-                    $clientArray = $this->convertToArrays($client);
-                    // TODO Re-enable for later
-                    /*$this->fattailClient->call(
-                        'UpdateClient',
-                        ['client' => $clientArray]
-                    );*/
-                }
-                else {
-                    // TODO Sync-ing
                 }
 
-                // Check campaign to workspace sync
-                $workspaceHash = null;
-                if ($rows[$i][$colMap['(Campaign) CD Workspace ID']] === "") {
+                // Check order to workspace sync
+                $workspaceHash = $rows[$i][$colMap['(Campaign) CD Workspace ID']];
+                if ($workspaceHash === "") {
 
                     $customFields = [
-                        'c_order_id' => $rows[$i][$colMap['Campaign ID']],
-                        'c_campaign_status' => $rows[$i][$colMap['IO Status']],
+                        'c_order_id'            => $orderId,
+                        'c_campaign_status'     => $rows[$i][$colMap['IO Status']],
                         'c_campaign_start_date' => $rows[$i][$colMap['Campaign Start Date']],
-                        'c_campaign_end_date' => $rows[$i][$colMap['Campaign End Date']]
+                        'c_campaign_end_date'   => $rows[$i][$colMap['Campaign End Date']]
                     ];
                     $workspaceHash = $this->createCDWorkspace(
                         $accountHash,
                         $rows[$i][$colMap['Campaign Name']]
                     );
 
-                    // Gets sales rep information
-                }
-                else {
-                    // TODO Sync-ing
+                    // TODO Gets sales rep information
+                    // and set role for account
+
                 }
                 exit;
 
                 // Check drop to milestone sync
-                if ($rows[$i][$colMap['(Drop) CD Milestone ID']] === "") {
+                $milestoneHash = $rows[$i][$colMap['(Drop) CD Milestone ID']];
+                if ($milestoneHash === "") {
 
                     $customFields = [
-                        'c_drop_id' => $rows[$i][$colMap['Drop ID']],
+                        'c_drop_id'              => $dropId,
                         'c_custom_unit_features' => $rows[$i][$colMap['(Drop) Custom Unit Features']],
-                        'c_kpi' => $rows[$i][$colMap['(Drop) Line Item KPI']],
-                        'c_drop_cost_new' => $rows[$i][$colMap['Sold Amount']]
+                        'c_kpi'                  => $rows[$i][$colMap['(Drop) Line Item KPI']],
+                        'c_drop_cost_new'        => $rows[$i][$colMap['Sold Amount']]
                     ];
                     $milestoneHash = $this->createCDMilestone(
                         $workspaceHash,
@@ -177,11 +147,124 @@ class SyncService {
                         $rows[$i][$colMap['End Date']],
                         $customFields
                     );
+
+                    // TODO Update drop with new milestone hash
                 }
                 else {
-                    // TODO Sync-ing
+                    // TODO Update milestone
                 }
+
+                // TODO update on client, order, and drop
+                // Update FatTail client
+                /*$clientArray = $this->convertToArrays($client);
+                $this->fattailClient->call(
+                    'UpdateClient',
+                    ['client' => $clientArray]
+                );*/
+
+                // Update FatTail order
+                /*$orderArray = $this->convertToArrays($order);
+                $this->fattailClient->call(
+                    'UpdateOrder',
+                    ['order' => $order]
+                );*/
+
+                // Update FatTail drop
+                /*$dropArray = $this->convertToArrays($drop);
+                $this->fattailClient->call(
+                    'UpdateDrop',
+                    ['drop' => $drop]
+                );*/
+                $this->cleanUp($this->tmpDir);
             }
+        }
+    }
+
+    /**
+     * Downloads a CSV report from FatTail.
+     *
+     * @param $report The report that will
+     *        have it's CSV file generated.
+     * @param $dir The system directory to save the CSV to.
+     *
+     * @return System path to the CSV file.
+     */
+    protected
+    function downloadReportCSV($report, $dir = '') {
+
+        // Get individual report details
+        $savedReportQuery = $this->fattailClient->call(
+            'GetSavedReportQuery',
+            [ 'savedReportId' => $report->SavedReportID ]
+        )->GetSavedReportQueryResult;
+
+        // Get the report parameters
+        $reportQuery = $savedReportQuery->ReportQuery;
+        $reportQuery = ['ReportQuery' => $reportQuery];
+        // Convert entirely to use only arrays, no objects
+        $reportQueryFormatted = $this->convertToArrays($reportQuery);
+
+        // Run reports jobs
+        $runReportJob = $this->fattailClient->call(
+            'RunReportJob',
+            ['reportJob' => $reportQueryFormatted]
+        )->RunReportJobResult;
+        $reportJobId = $runReportJob->ReportJobID;
+
+        // Ping report job until status is 'Done'
+        $done = false;
+        while(!$done) {
+            sleep($this->PING_INTERVAL);
+
+            $reportJob = $this->fattailClient->call(
+                'GetReportJob',
+                ['reportJobId' => $reportJobId]
+            )->GetReportJobResult;
+
+            if (strtolower($reportJob->Status) === $this->DONE) {
+                $done = true;
+            }
+        }
+
+        // Get the CSV download URL
+        $reportURLResult = $this->fattailClient->call(
+            'GetReportDownloadUrl',
+            ['reportJobId' => $reportJobId]
+        );
+        $reportURL = $reportURLResult->GetReportDownloadURLResult;
+
+        $csvPath = $dir . $report->SavedReportID . '.csv';
+
+        // Create download directory if it doesn't exist
+        if (!is_dir($dir)) {
+            mkdir($dir);
+        }
+
+        // Download the file
+        file_put_contents(
+            $csvPath,
+            fopen($reportURL, 'r')
+        );
+
+        return $csvPath;
+    }
+
+    /**
+     * Cleans up (deletes) all CSV files within the directory
+     * and then deletes the directory.
+     *
+     * @param $dir The directory to clean up.
+     */
+    protected
+    function cleanUp($dir = '') {
+
+        if (is_dir($dir)) {
+
+            // Delete all files within the directory
+            array_map('unlink', glob($dir . '*.csv'));
+
+            // Delete the directory
+            rmdir($dir);
         }
     }
 
@@ -397,6 +480,7 @@ class SyncService {
      */
     private
     function createCDCustomField($name, $value) {
+
         $item = new \stdClass();
         $item->fieldApiId = $name;
         $item->value = $value;
