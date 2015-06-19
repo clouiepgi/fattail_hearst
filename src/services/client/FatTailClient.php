@@ -9,17 +9,20 @@
 
 namespace CentralDesktop\FatTail\Services\Client;
 
-class FatTailClient {
+use Psr\Log\LoggerAwareTrait;
 
-    protected $soapClient = null;
+class FatTailClient {
+    use LoggerAwareTrait;
+
+    protected $soap_client = null;
 
     public
-    function __construct(\WsSoap\Client $soapClient) {
-        $this->soapClient = $soapClient;
+    function __construct(\WsSoap\Client $soap_client) {
+        $this->soap_client = $soap_client;
     }
 
     public
     function call($name, $params = null) {
-        return $this->soapClient->$name($params);
+        return $this->soap_client->$name($params);
     }
 }

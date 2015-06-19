@@ -9,33 +9,35 @@
 namespace CentralDesktop\FatTail\Services\Auth;
 
 use JWT;
+use Psr\Log\LoggerAwareTrait;
 
 class EdgeAuth {
+    use LoggerAwareTrait;
 
-    protected $authURL;
+    protected $auth_url;
     protected $issuer;
     protected $scp;
-    protected $grantType;
-    protected $clientId;
-    protected $privateKey;
+    protected $grant_type;
+    protected $client_id;
+    protected $private_key;
     protected $client;
 
     public
     function __construct(
-        $authURL,
+        $auth_url,
         $issuer,
         $scp,
-        $grantType,
-        $clientId,
-        $privateKey,
+        $grant_type,
+        $client_id,
+        $private_key,
         \GuzzleHttp\Client $client
     ) {
-        $this->authURL = $authURL;
+        $this->auth_url = $auth_url;
         $this->issuer = $issuer;
         $this->scp = $scp;
-        $this->grantType = $grantType;
-        $this->clientId = $clientId;
-        $this->privateKey = $privateKey;
+        $this->grant_type = $grant_type;
+        $this->client_id = $client_id;
+        $this->private_key = $private_key;
         $this->client = $client;
     }
 
@@ -45,45 +47,48 @@ class EdgeAuth {
     public
     function getAccessToken() {
         $user = [
-            "iss" => $this->clientId,
+            "iss" => $this->client_id,
             "aud" => $this->issuer,
             "exp" => time() + 600000,
             "iat" => time(),
             "scp" => $this->scp
         ];
 
-        $authToken = JWT::encode($user, $this->privateKey, 'RS256');
+        $auth_token = JWT::encode($user, $this->private_key, 'RS256');
 
-        $accessToken = null;
+        $access_token = null;
 
-        $formParams = [
-            'grant_type' => $this->grantType,
-            'assertion'  => $authToken
+        $form_params = [
+            'grant_type' => $this->grant_type,
+            'assertion'  => $auth_token
         ];
 
         try {
-            $httpResponse = $this->client->post(
-                $this->authURL,
+            $http_response = $this->client->post(
+                $this->auth_url,
                 [
-                    'form_params' => $formParams
+                    'form_params' => $form_params
                 ]
             );
-            $jsonResponse = json_decode($httpResponse->getBody());
+            $json_response = json_decode($http_response->getBody());
 
-            $accessToken = $jsonResponse->access_token;
+            $access_token = $json_response->access_token;
         }
         catch (\GuzzleHttp\Exception\RequestException $e) {
-            // TODO
-            print_r($e->getMessage());
+            $this->logger->error('Bad http request made.');
             if ($e->getResponse()) {
-                 print_r($e->getResponse()->getBody());
+                $this->logger->error($e->getResponse());
             }
+            $this->logger->error('Exiting.');
+            exit;
         }
         catch (\Exception $e) {
-            // TODO
-            print_r($e);
+            $this->logger->error('Bad http request made.');
+            $this->logger->error($e);
+            $this->logger->error('Exiting.');
+            exit;
         }
 
-        return $accessToken;
+        return $access_token;
     }
 }

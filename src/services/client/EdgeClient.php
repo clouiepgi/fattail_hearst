@@ -11,25 +11,28 @@ namespace CentralDesktop\FatTail\Services\Client;
 
 use CentralDesktop\FatTail\Services\Auth\EdgeAuth;
 
-class EdgeClient {
+use Psr\Log\LoggerAwareTrait;
 
-    protected $authClient  = null;
-    protected $httpClient  = null;
-    protected $accessToken = null;
-    protected $baseURL = null;
+class EdgeClient {
+    use LoggerAwareTrait;
+
+    protected $auth_client  = null;
+    protected $http_client  = null;
+    protected $access_token = null;
+    protected $base_url = null;
     const METHOD_GET = 'get';
     const METHOD_POST = 'post';
     const METHOD_DELETE = 'delete';
 
     public
     function __construct(
-        EdgeAuth $edgeAuth,
-        \GuzzleHttp\Client $httpClient,
-        $baseURL
+        EdgeAuth $edge_auth,
+        \GuzzleHttp\Client $http_client,
+        $base_url
     ) {
-        $this->authClient = $edgeAuth;
-        $this->httpClient = $httpClient;
-        $this->baseURL = $baseURL;
+        $this->auth_client = $edge_auth;
+        $this->http_client = $http_client;
+        $this->base_url = $base_url;
     }
 
     /**
@@ -37,8 +40,8 @@ class EdgeClient {
      */
     public
     function init() {
-        if ($this->accessToken === null) {
-            $this->accessToken = $this->authClient->getAccessToken();
+        if ($this->access_token === null) {
+            $this->access_token = $this->auth_client->getAccessToken();
         }
     }
 
@@ -51,26 +54,26 @@ class EdgeClient {
      * @return array representation of JSON response
      */
     public
-    function call($method, $path, $queryParams = null, $formParams = null) {
+    function call($method, $path, $query_params = null, $formParams = null) {
 
         // Get URL and header information
         $url = $this->getURL($path);
-        $reqData = $this->prepareRequestData($queryParams, $formParams);
+        $reqData = $this->prepareRequestData($query_params, $formParams);
 
         // Make call based on method type
         $method = strtolower($method);
         switch ($method) {
             case EdgeClient::METHOD_POST:
-                $httpResponse = $this->httpClient->post($url, $reqData);
+                $http_response = $this->http_client->post($url, $reqData);
                 break;
             case EdgeClient::METHOD_DELETE:
-                $httpResponse = $this->httpClient->delete($url, $reqData);
+                $http_response = $this->http_client->delete($url, $reqData);
                 break;
             default:
-                $httpResponse = $this->httpClient->get($url, $reqData);
+                $http_response = $this->http_client->get($url, $reqData);
         }
 
-        return $httpResponse;
+        return $http_response;
     }
 
     /**
@@ -82,7 +85,7 @@ class EdgeClient {
     private
     function getURL($path) {
 
-        return $this->baseURL . $path;
+        return $this->base_url . $path;
     }
 
     /**
@@ -93,25 +96,25 @@ class EdgeClient {
     private
     function getHeaders() {
 
-        if (!$this->accessToken) {
+        if (!$this->access_token) {
              $this->init();
         }
 
         return [
-             'Authorization' => 'Bearer ' . $this->accessToken
+             'Authorization' => 'Bearer ' . $this->access_token
         ];
     }
 
     /**
      * Prepares the request data for a request.
      *
-     * @param $queryParams The query string parameters for the request.
-     * @param $jsonData The JSON data in PHP format for the request.
+     * @param $query_params The query string parameters for the request.
+     * @param $json_date The JSON data in PHP format for the request.
      *
      * @return An array representing the request data.
      */
     private
-    function prepareRequestData($queryParams = null, $jsonData = null) {
+    function prepareRequestData($query_params = null, $json_date = null) {
 
         $headers = $this->getHeaders();
 
@@ -120,11 +123,11 @@ class EdgeClient {
         ];
 
         // Set a default context Id based on initialization
-        if ($queryParams !== null) {
-            $request['query'] = $queryParams;
+        if ($query_params !== null) {
+            $request['query'] = $query_params;
         }
-        if ($jsonData !== null) {
-            $request['json'] = $jsonData;
+        if ($json_date !== null) {
+            $request['json'] = $json_date;
         }
 
         return $request;
