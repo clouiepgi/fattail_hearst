@@ -74,14 +74,40 @@ class SyncService {
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
+        // Find the dynamic property id for the workspace id
+        $order_workspace_property_id = null;
+        $order_dynamic_properties_list = $this->fattail_client->call(
+            'GetDynamicPropertiesListForOrder'
+        )->GetDynamicPropertiesListForOrderResult;
+        foreach ($order_dynamic_properties_list->DynamicProperty as $prop) {
+            if ($prop->Name === 'H_CD_Workspace_ID') {
+                $order_workspace_property_id = $prop->DynamicPropertyID;
+                break;
+            }
+        }
+
+        // Find the dynamic property id for the milestone id
+        $drop_milestone_property_id = null;
+        $drop_dynamic_properties_list = $this->fattail_client->call(
+            'GetDynamicPropertiesListForDrop'
+        )->GetDynamicPropertiesListForDropResult;
+        foreach ($drop_dynamic_properties_list->DynamicProperty as $prop) {
+            if ($prop->Name === 'H_CD_Milestone_ID') {
+                $drop_milestone_property_id = $prop->DynamicPropertyID;
+                break;
+            }
+        }
+
         // Create mapping of column name with column index
-        // Not necessary, but makes it easier to work with the data
-        // can remove if optimization issues arise
+        // Not necessary, but makes it easier to work with the data.
+        // Can remove if optimization issues arise because of this
         $col_map = [];
         foreach ($rows[0] as $index => $name) {
             $col_map[$name] = $index;
         }
 
+        $this->logger->info("Processing CSV and syncing data.\n");
+        $stored_user_ids = [];
         // Iterate over CSV and process data
         // Skip the first and last rows since they
         // dont have the data we need
@@ -109,9 +135,32 @@ class SyncService {
                 ['dropId' => $drop_id]
             )->GetDropResult;
 
+            /*$order->OrderDynamicProperties = [
+                'DynamicPropertyValue' => [
+                    [
+                        'DynamicPropertyID' => $order_workspace_property_id,
+                        'Value' => 'asdfasdsdf'
+                    ]
+                ]
+            ];
+            $order_array = $this->convert_to_arrays($order);
+            $this->fattail_client->call(
+                'UpdateOrder',
+                ['order' => $order_array]
+            );
+
+            $order = $this->fattail_client->call(
+                'GetOrder',
+                ['orderId' => $order_id]
+            )->GetOrderResult;*/
+
+            //print_r($order);
+
+            //exit;
+
             // Check client to account sync
             $account_hash = $client->ExternalID;
-            if ($account_hash === "") {
+            if ($account_hash === '') {
 
                 $custom_fields = [
                     'c_client_id' => $client_id
@@ -127,7 +176,7 @@ class SyncService {
 
             // Check order to workspace sync
             $workspace_hash = $rows[$i][$col_map['(Campaign) CD Workspace ID']];
-            if ($workspace_hash === "") {
+            if ($workspace_hash === '') {
 
                 $custom_fields = [
                     'c_order_id'            => $order_id,
@@ -141,6 +190,8 @@ class SyncService {
                 );*/
 
                 // Update the CD Workspace ID on FatTail order
+                // TODO This is not correct, working on finding something that
+                // works
                 $old_properties = [];
                 if (
                     property_exists($order, 'OrderDynamicProperties') &&
@@ -157,6 +208,47 @@ class SyncService {
 
                 // TODO Gets sales rep information
                 // and set role for account
+
+                // Splitting name, assuming only first and last name in
+                // 'Last,' First format
+                $sales_rep_name = $rows[$i][$col_map['Sales Rep']];
+                $name_parts = explode(', ', $sales_rep_name);
+                $full_name = strtolower($name_parts[1] . ' ' . $name_parts[0]);
+
+                // Search for the user by name
+                $user_hash = isset($stored_user_ids[$full_name]) ?
+                    $stored_user_ids[$full_name] : null;
+                if ($user_hash === null) {
+                    $user_hash = $this->get_cd_user_id_by_name('christopher louie');
+                    //$user_hash = $this->get_cd_user_id_by_name($full_name);
+                    // Cache the hash for later use
+                    $stored_user_ids[$full_name] = $user_hash;
+                }
+
+                if ($user_hash === null) {
+                    $this->logger->info('Failed to find Sales Rep user.
+                        Continuing without assigning a user to Salesrep role.');
+                }
+                else {
+                    // Add user to 'Salesrep' workspace role
+                    $add_user_to_role_path = sprintf(
+                        'workspaces/%s/roles/%s/addUser',
+                        $workspace_hash,
+                        $role_hash
+                    );
+                    $body = new \stdClass();
+                    $body->userIds = [
+                        $user_hash
+                    ];
+                    $body->clearExisting = false;
+                    $http_response = $this->edge_client->call(
+                        EdgeClient::METHOD_POST,
+                        $add_user_to_role_path,
+                        [],
+                        $body
+                    );
+                    print_r($http_response);
+                }
             }
 
             // Check drop to milestone sync
@@ -167,7 +259,7 @@ class SyncService {
                 'c_kpi'                  => $rows[$i][$col_map['(Drop) Line Item KPI']],
                 'c_drop_cost_new'        => $rows[$i][$col_map['Sold Amount']]
             ];
-            if ($milestone_hash === "") {
+            if ($milestone_hash === '') {
 
                 /*$milestone_hash = $this->create_cd_milestone(
                     $workspace_hash,
@@ -178,9 +270,6 @@ class SyncService {
                     $custom_fields
                 );*/
 
-
-                // TODO Gets sales rep information
-                // and set role for account
             }
             else {
                 // Update milestone with latest drop data
@@ -199,6 +288,8 @@ class SyncService {
             }
 
             // Update the CD Milestone ID on FatTail drop
+            // TODO This is not correct, working on finding something that
+            // works
             $old_properties = [];
             if (
                 property_exists($drop, 'DropDynamicProperties') &&
@@ -224,14 +315,14 @@ class SyncService {
             /*$order_array = $this->convert_to_arrays($order);
             $this->fattail_client->call(
                 'UpdateOrder',
-                ['order' => $order]
+                ['order' => $order_array]
             );*/
 
             // Update FatTail drop
             /*$drop_array = $this->convert_to_arrays($drop);
             $this->fattail_client->call(
                 'UpdateDrop',
-                ['drop' => $drop]
+                ['drop' => $drop_array]
             );*/
         }
 
@@ -398,24 +489,8 @@ class SyncService {
 
         $http_response = $this->create_cd_entity($path, $details);
 
-        // Check if create wasn't successful
-        if (
-            $http_response == null ||
-            $http_response->getStatusCode() !== 201
-        ) {
-            // TODO
-        }
-
-        // Call accounts endpoint to get the latest hash/id
-        $response = $this->edge_client->call(
-            EdgeClient::METHOD_GET,
-            $path
-        );
-        $accounts = json_decode($response->getBody());
-
-        // The last inserted account should be
-        // the new one we just created
-        return $accounts->lastRecord;
+        // Return the id of the account
+        return $http_response->getBody()->getContents();
     }
 
     /**
@@ -446,23 +521,8 @@ class SyncService {
 
         $http_response = $this->create_cd_entity($path, $details);
 
-        // Check if create wasn't successful
-        if (
-            $http_response == null ||
-            $http_response->getStatusCode() !== 201
-        ) {
-            // TODO
-        }
-
-        // TODO on successful creation of workspace
-        /*$response = $this->edge_client->call(
-            EdgeClient::METHOD_GET,
-            $path
-        );
-        $workspaces = json_decode($response->getBody());
-
-        return $workspaces->lastRecord;*/
-        return $http_response; // TODO Temporary
+        // Return the id of the workspace
+        return $http_response->getBody()->getContents();
     }
 
     /**
@@ -485,13 +545,14 @@ class SyncService {
         $description,
         $start_date,
         $end_date,
-        $custom_fields
+        $custom_fields = []
     ) {
         $details = new \stdClass();
         $details->title = $name;
+        $details->startDate = $start_date;
+        $details->dueDate = $end_date;
         $details->description = $description;
-        $details->start_date = $start_date;
-        $details->end_date = $end_date;
+        $details->reminders = [''];
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
 
         // Create a new milestone
@@ -499,22 +560,8 @@ class SyncService {
 
         $http_response = $this->create_cd_entity($path, $details);
 
-        // Check if create wasn't successful
-        if (
-            $http_response == null ||
-            $http_response->getStatusCode() !== 201
-        ) {
-            // TODO
-        }
-
-        // Call milestone endpoint to get the latest hash
-        $response = $this->edge_client->call(
-            EdgeClient::METHOD_GET,
-            $path
-        );
-        $milestones = json_decode($response->getBody());
-
-        return $milestones->lastRecord;
+        // Return the id of the workspace
+        return $http_response->getBody()->getContents();
     }
 
     /**
@@ -567,6 +614,43 @@ class SyncService {
         $workspaces = json_decode($response->getBody());
 
         return $milestones_id;
+    }
+
+    /**
+     * Finds a Central Desktop user by first name and last name.
+     * The names will be formatted to "first last" and compared.
+     *
+     * @param $first_name The first name of the user.
+     *
+     * @return The user id.
+     */
+    private
+    function get_cd_user_id_by_name($full_name) {
+
+        $http_response = $this->edge_client->call(
+            EdgeClient::METHOD_GET,
+            'users'
+        );
+
+        $users = json_decode($http_response->getBody())->items;
+
+        $user = array_filter($users, function ($user) use ($full_name) {
+            return strtolower($user->details->fullName) === $full_name;
+        });
+
+        return count($user) > 0 ? $user[0]->id : null;
+    }
+
+    /**
+     * Gets a role by name.
+     *
+     * @param $name The name of the role.
+     *
+     * @return The role id.
+     */
+    private
+    function get_cd_role_by_name($name) {
+
     }
 
     /**

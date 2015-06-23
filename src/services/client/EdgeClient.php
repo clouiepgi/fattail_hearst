@@ -119,7 +119,9 @@ class EdgeClient {
         $headers = $this->get_headers();
 
         $request = [
-             'headers' => $headers
+             'headers' => $headers,
+             //'debug' => true
+             'stream' => false
         ];
 
         // Set a default context Id based on initialization
