@@ -109,27 +109,26 @@ class EdgeClient {
      * Prepares the request data for a request.
      *
      * @param $query_params The query string parameters for the request.
-     * @param $json_date The JSON data in PHP format for the request.
+     * @param $json_data The JSON data in PHP format for the request.
      *
      * @return An array representing the request data.
      */
     private
-    function prepare_request_data($query_params = null, $json_date = null) {
+    function prepare_request_data($query_params = null, $json_data = null) {
 
         $headers = $this->get_headers();
 
         $request = [
              'headers' => $headers,
              //'debug' => true
-             'stream' => false
         ];
 
         // Set a default context Id based on initialization
         if ($query_params !== null) {
             $request['query'] = $query_params;
         }
-        if ($json_date !== null) {
-            $request['json'] = $json_date;
+        if ($json_data !== null) {
+            $request['json'] = $json_data;
         }
 
         return $request;

@@ -25,6 +25,8 @@ class SyncService {
     private $DONE             = 'done';
     private $tmp_dir          = 'tmp/';
 
+    private $SALES_REP_ROLE = 'Salesrep';
+
     public
     function __construct(
         EdgeClient $edge_client,
@@ -61,7 +63,6 @@ class SyncService {
         }
 
         if ($report === null) {
-            // TODO
             $this->logger->info("Unable to find requested report. Exiting.\n");
             exit;
         }
@@ -107,7 +108,7 @@ class SyncService {
         }
 
         $this->logger->info("Processing CSV and syncing data.\n");
-        $stored_user_ids = [];
+        
         // Iterate over CSV and process data
         // Skip the first and last rows since they
         // dont have the data we need
@@ -157,173 +158,30 @@ class SyncService {
             //print_r($order);
 
             //exit;
+            $client = $this->sync_client_to_account($client, $rows[$i]);
 
             // Check client to account sync
             $account_hash = $client->ExternalID;
-            if ($account_hash === '') {
-
-                $custom_fields = [
-                    'c_client_id' => $client_id
-                ];
-                /*$account_hash = $this->create_cd_account(
-                    $client->Name,
-                    $custom_fields
-                );*/
-
-                // Update client external id with new account hash
-                $client->ExternalID = $account_hash;
-            }
 
             // Check order to workspace sync
             $workspace_hash = $rows[$i][$col_map['(Campaign) CD Workspace ID']];
-            if ($workspace_hash === '') {
+            $order = $this->sync_order_to_workspace(
+                $order,
+                $account_hash,
+                $workspace_hash,
+                $rows[$i],
+                $col_map
+            );
+            /*$workspace_hash = $order->OrderDynamicProperties; // TODO Get the CD Workspace ID
 
-                $custom_fields = [
-                    'c_order_id'            => $order_id,
-                    'c_campaign_status'     => $rows[$i][$col_map['IO Status']],
-                    'c_campaign_start_date' => $rows[$i][$col_map['Campaign Start Date']],
-                    'c_campaign_end_date'   => $rows[$i][$col_map['Campaign End Date']]
-                ];
-                /*$workspace_hash = $this->create_cd_workspace(
-                    $account_hash,
-                    $rows[$i][$col_map['Campaign Name']]
-                );*/
-
-                // Update the CD Workspace ID on FatTail order
-                // TODO This is not correct, working on finding something that
-                // works
-                $old_properties = [];
-                if (
-                    property_exists($order, 'OrderDynamicProperties') &&
-                    $order->OrderDynamicProperties !== null
-                ) {
-                    $old_properties = $this->convert_to_arrays(
-                        $order->OrderDynamicProperties
-                    );
-                }
-                $new_properties = array_merge($old_properties, [
-                    'CD Workspace ID' => $workspace_hash
-                ]);
-                $order->OrderDynamicProperties = $new_properties;
-
-                // TODO Gets sales rep information
-                // and set role for account
-
-                // Splitting name, assuming only first and last name in
-                // 'Last,' First format
-                $sales_rep_name = $rows[$i][$col_map['Sales Rep']];
-                $name_parts = explode(', ', $sales_rep_name);
-                $full_name = strtolower($name_parts[1] . ' ' . $name_parts[0]);
-
-                // Search for the user by name
-                $user_hash = isset($stored_user_ids[$full_name]) ?
-                    $stored_user_ids[$full_name] : null;
-                if ($user_hash === null) {
-                    $user_hash = $this->get_cd_user_id_by_name('christopher louie');
-                    //$user_hash = $this->get_cd_user_id_by_name($full_name);
-                    // Cache the hash for later use
-                    $stored_user_ids[$full_name] = $user_hash;
-                }
-
-                if ($user_hash === null) {
-                    $this->logger->info('Failed to find Sales Rep user.
-                        Continuing without assigning a user to Salesrep role.');
-                }
-                else {
-                    // Add user to 'Salesrep' workspace role
-                    $add_user_to_role_path = sprintf(
-                        'workspaces/%s/roles/%s/addUser',
-                        $workspace_hash,
-                        $role_hash
-                    );
-                    $body = new \stdClass();
-                    $body->userIds = [
-                        $user_hash
-                    ];
-                    $body->clearExisting = false;
-                    $http_response = $this->edge_client->call(
-                        EdgeClient::METHOD_POST,
-                        $add_user_to_role_path,
-                        [],
-                        $body
-                    );
-                    print_r($http_response);
-                }
-            }
-
-            // Check drop to milestone sync
-            $milestone_hash = $rows[$i][$col_map['(Drop) CD Milestone ID']];
-            $custom_fields = [
-                'c_drop_id'              => $drop_id,
-                'c_custom_unit_features' => $rows[$i][$col_map['(Drop) Custom Unit Features']],
-                'c_kpi'                  => $rows[$i][$col_map['(Drop) Line Item KPI']],
-                'c_drop_cost_new'        => $rows[$i][$col_map['Sold Amount']]
-            ];
-            if ($milestone_hash === '') {
-
-                /*$milestone_hash = $this->create_cd_milestone(
-                    $workspace_hash,
-                    $rows[$i][$col_map['Position Path']],
-                    $rows[$i][$col_map['Drop Description']],
-                    $rows[$i][$col_map['Start Date']],
-                    $rows[$i][$col_map['End Date']],
-                    $custom_fields
-                );*/
-
-            }
-            else {
-                // Update milestone with latest drop data
-
-                /*$milestone_hash = $this->update_cd_milestone(
-                    $milestone_hash,
-                    $rows[$i][$col_map['Position Path']],
-                    $rows[$i][$col_map['Drop Description']],
-                    $rows[$i][$col_map['Start Date']],
-                    $rows[$i][$col_map['End Date']],
-                    $custom_fields
-                );*/
-
-                // TODO Gets sales rep information
-                // and set role for account
-            }
-
-            // Update the CD Milestone ID on FatTail drop
-            // TODO This is not correct, working on finding something that
-            // works
-            $old_properties = [];
-            if (
-                property_exists($drop, 'DropDynamicProperties') &&
-                $drop>DropDynamicProperties !== null
-            ) {
-                $old_properties = $this->convert_to_arrays(
-                    $drop>DropDynamicProperties
-                );
-            }
-            $new_properties = array_merge($old_properties, [
-                'CD Milestone ID' => $milestone_hash
-            ]);
-            $drop->DropDynamicProperties = $new_properties;
-
-            // Update FatTail client
-            /*$client_array = $this->convert_to_arrays($client);
-            $this->fattail_client->call(
-                'UpdateClient',
-                ['client' => $client_array]
-            );*/
-
-            // Update FatTail order
-            /*$order_array = $this->convert_to_arrays($order);
-            $this->fattail_client->call(
-                'UpdateOrder',
-                ['order' => $order_array]
-            );*/
-
-            // Update FatTail drop
-            /*$drop_array = $this->convert_to_arrays($drop);
-            $this->fattail_client->call(
-                'UpdateDrop',
-                ['drop' => $drop_array]
-            );*/
+            $drop = $this->sync_drop_to_milestone(
+                $drop,
+                $drop_id,
+                $workspace_hash,
+                $rows[$i],
+                $col_map
+            );
+            $milestone_hash = $drop->DropDynamicProperties; //TODO Get milestone hash from dynamic properties*/
         }
 
         $this->logger->info("Finished report sync.\n");
@@ -477,7 +335,7 @@ class SyncService {
      *
      * @returns The account hash of the new account.
      */
-    protected
+    private
     function create_cd_account($name, $custom_fields = []) {
 
         $details = new \stdClass();
@@ -506,7 +364,7 @@ class SyncService {
      *
      * @return TODO
      */
-    protected
+    private
     function create_cd_workspace(
         $account_id,
         $name,
@@ -514,6 +372,7 @@ class SyncService {
     ) {
         $details = new \stdClass();
         $details->workspaceName = $name;
+        $details->workspaceType = 'WzIxLDQ2NDA1MV0'; // TODO The real hash of the workspace template
 
         // Prepare data for request
         $path = 'accounts/' . $account_id . '/workspaces';
@@ -634,8 +493,12 @@ class SyncService {
 
         $users = json_decode($http_response->getBody())->items;
 
-        $user = array_filter($users, function ($user) use ($full_name) {
-            return strtolower($user->details->fullName) === $full_name;
+        $full_name_lower = strtolower($full_name);
+
+        $user = array_filter($users, function ($user) use ($full_name_lower) {
+            $user_full_name_lower = strtolower($user->details->fullName);
+
+            return $user_full_name_lower === $full_name_lower;
         });
 
         return count($user) > 0 ? $user[0]->id : null;
@@ -649,8 +512,265 @@ class SyncService {
      * @return The role id.
      */
     private
-    function get_cd_role_by_name($name) {
+    function get_cd_role_id_by_name($name) {
+        
+        $http_response = $this->edge_client->call(
+            EdgeClient::METHOD_GET,
+            'roles'
+        );
 
+        $roles = json_decode($http_response->getBody())->items;
+
+        $name_lower = strtolower($name);
+
+        $role = array_filter($roles, function ($role) use ($name_lower) {
+            $title_lower = strtolower($role->details->title);
+
+            return $title_lower === $name_lower;
+        });
+
+        return count($role) > 0 ? $role[0]->id : null;
+    }
+
+    /**
+     * Syncs FatTail clients with Central Desktop accounts.
+     *
+     * @param $client The FatTail client which
+     *                corresponds to a CD account.
+     * @param $rows The report data.
+     *
+     * @return The (un)updated client.
+     */
+    private
+    function sync_client_to_account($client, $rows) {
+        
+        $account_hash = $client->ExternalID;
+        if ($account_hash === '') {
+
+            // Create CD account
+            $custom_fields = [
+                'c_client_id' => $client->ClientID
+            ];
+            $account_hash = $this->create_cd_account(
+                $client->Name,
+                $custom_fields
+            );
+
+            // Update client external id with new account hash
+            $client->ExternalID = $account_hash;
+        }
+            
+        // Update FatTail client
+        /*$client_array = $this->convert_to_arrays($client);
+        $this->fattail_client->call(
+            'UpdateClient',
+            ['client' => $client_array]
+        );*/
+
+        return $client;
+    }
+
+    /**
+     * Syncs FatTail orders with Central Desktop workspaces.
+     *
+     * @param $order The FatTail order which
+     *                     corresponds to a CD workspace.
+     * @param $account_hash The hash of the CD account.
+     * @param $workspace_hash The hash of the CD workspace.
+     * @param $row The report data.
+     * @param $col_map The report data column mapping.
+     *
+     * @return The (un)updated order.
+     */
+    private
+    function sync_order_to_workspace(
+        $order,
+        $account_hash,
+        $workspace_hash,
+        $row,
+        $col_map
+    ) {
+        
+        if ($workspace_hash === '') {
+
+            $custom_fields = [
+                'c_order_id'            => $order->OrderID,
+                'c_campaign_status'     => $row[$col_map['IO Status']],
+                'c_campaign_start_date' => $row[$col_map['Campaign Start Date']],
+                'c_campaign_end_date'   => $row[$col_map['Campaign End Date']]
+            ];
+            $workspace_hash = $this->create_cd_workspace(
+                $account_hash,
+                $row[$col_map['Campaign Name']],
+                $custom_fields
+            );
+
+            // Update the CD Workspace ID on FatTail order
+            // TODO This is not correct, working on finding something that
+            // works
+            $old_properties = [];
+            if (
+                property_exists($order, 'OrderDynamicProperties') &&
+                $order->OrderDynamicProperties !== null
+            ) {
+                $old_properties = $this->convert_to_arrays(
+                    $order->OrderDynamicProperties
+                );
+            }
+            $new_properties = array_merge($old_properties, [
+                'CD Workspace ID' => $workspace_hash
+            ]);
+            $order->OrderDynamicProperties = $new_properties;
+
+            // Get sales rep information and set role for account
+
+            // Splitting name, assuming only first and last name in
+            // 'Last,' First format
+            $sales_rep_name = $row[$col_map['Sales Rep']];
+            $name_parts = explode(', ', $sales_rep_name);
+            $full_name = strtolower($name_parts[1] . ' ' . $name_parts[0]);
+
+            $this->assign_user_to_role(
+                $full_name,
+                $this->SALES_REP_ROLE,
+                $workspace_hash
+            );
+        }
+
+        // Update FatTail order
+        /*$order_array = $this->convert_to_arrays($order);
+        $this->fattail_client->call(
+            'UpdateOrder',
+            ['order' => $order_array]
+        );*/
+
+        return $order;
+    }
+
+    /**
+     * Syncs FatTail drops with Central Desktop milestones.
+     *
+     * @param $drop The FatTail drop which
+     *              corresponds to a CD milestone.
+     * @param $drop_id The id of the FatTail drop.
+     * @param $workspace_hash The hash of the CD workspace.
+     * @param $row The report data.
+     * @param $col_map The report data column mapping.
+     *
+     * @return The (un)updated drop.
+     */
+    private
+    function sync_drop_to_milestone($drop, $drop_id, $workspace_hash, $row, $col_map) {
+
+            // Check drop to milestone sync
+            $milestone_hash = $row[$col_map['(Drop) CD Milestone ID']];
+            $custom_fields = [
+                'c_drop_id'              => $drop_id,
+                'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
+                'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
+                'c_drop_cost_new'        => $row[$col_map['Sold Amount']]
+            ];
+            if ($milestone_hash === '') {
+
+                /*$milestone_hash = $this->create_cd_milestone(
+                    $workspace_hash,
+                    $row[$col_map['Position Path']],
+                    $row[$col_map['Drop Description']],
+                    $row[$col_map['Start Date']],
+                    $row[$col_map['End Date']],
+                    $custom_fields
+                );*/
+
+            }
+            else {
+                // Update milestone with latest drop data
+
+                /*$milestone_hash = $this->update_cd_milestone(
+                    $milestone_hash,
+                    $row[$col_map['Position Path']],
+                    $row[$col_map['Drop Description']],
+                    $row[$col_map['Start Date']],
+                    $row[$col_map['End Date']],
+                    $custom_fields
+                );*/
+
+                // TODO Gets sales rep information
+                // and set role for account
+            }
+
+            // Update the CD Milestone ID on FatTail drop
+            // TODO This is not correct, working on finding something that
+            // works
+            $old_properties = [];
+            if (
+                property_exists($drop, 'DropDynamicProperties') &&
+                $drop>DropDynamicProperties !== null
+            ) {
+                $old_properties = $this->convert_to_arrays(
+                    $drop>DropDynamicProperties
+                );
+            }
+            $new_properties = array_merge($old_properties, [
+                'CD Milestone ID' => $milestone_hash
+            ]);
+            $drop->DropDynamicProperties = $new_properties;
+
+            // Update FatTail drop
+            /*$drop_array = $this->convert_to_arrays($drop);
+            $this->fattail_client->call(
+                'UpdateDrop',
+                ['drop' => $drop_array]
+            );*/
+
+            return $drop;
+    }
+
+    /**
+     * Assigns a user based on their full name to
+     * a role by its name.
+     *
+     * @param $full_name The user's full name.
+     * @param $role_name The role's name.
+     */
+    private
+    function assign_user_to_role($full_name, $role_name, $workspace_hash) {
+
+        // Search for the user by name
+        $user_hash = $this->get_cd_user_id_by_name($full_name);
+
+        $role_hash = $this->get_cd_role_id_by_name($role_name);
+
+        if ($user_hash === null) {
+            $this->logger->info('Failed to find Sales Rep user. ' .
+                'Continuing without assigning a user to Salesrep role.');
+        }
+        else if ($role_hash == null) {
+            $this->logger->info('Failed to find Central Desktop role.' .
+                'Make sure a \'Salesrep\' role exists. ' .
+                'Continuing without assigning a user to Salesrep role.');
+        }
+        else {
+
+            // Add user to 'Salesrep' workspace role
+            $add_user_to_role_path = sprintf(
+                'workspaces/%s/roles/%s/addUser',
+                $workspace_hash,
+                $role_hash
+            );
+            $body = new \stdClass();
+            $body->userIds = [
+                $user_hash
+            ];
+            $body->clearExisting = false;
+            //$http_response = $this->edge_client->call(
+            //    EdgeClient::METHOD_POST,
+            //    $add_user_to_role_path,
+            //    [],
+            //    $body
+            //);
+
+            // TODO check if add user to role was successful
+        }
     }
 
     /**
