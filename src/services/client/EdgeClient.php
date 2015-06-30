@@ -27,7 +27,8 @@ class EdgeClient {
     public
     function __construct(
         EdgeAuth $edge_auth,
-        \GuzzleHttp\Client $http_client,
+        //\GuzzleHttp\Client $http_client,
+        \Buzz\Browser $http_client,
         $base_url
     ) {
         $this->auth_client = $edge_auth;
@@ -49,28 +50,32 @@ class EdgeClient {
      * Calls get requests to an Edge API endpoint.
      *
      * @param $path The path for the resource.
-     * @param $params The query string parameters in array key value form.
+     * @param $query_params The query string parameters in array key value form.
+     * @param $content_array The content to send in array format.
      *
-     * @return array representation of JSON response
+     * @return guzzlehttp response
      */
     public
-    function call($method, $path, $query_params = null, $formParams = null) {
+    function call($method, $path, $query_params = [], $content_array = []) {
 
         // Get URL and header information
-        $url = $this->get_url($path);
-        $reqData = $this->prepare_request_data($query_params, $formParams);
+        $url = $this->get_url($path, $query_params);
+        $headers = $this->get_headers([
+            'Content-Type' => 'application/json'
+        ]);
+        $content = json_encode($content_array);
 
         // Make call based on method type
         $method = strtolower($method);
         switch ($method) {
             case EdgeClient::METHOD_POST:
-                $http_response = $this->http_client->post($url, $reqData);
+                $http_response = $this->http_client->post($url, $headers, $content);
                 break;
             case EdgeClient::METHOD_DELETE:
-                $http_response = $this->http_client->delete($url, $reqData);
+                $http_response = $this->http_client->delete($url, $headers);
                 break;
             default:
-                $http_response = $this->http_client->get($url, $reqData);
+                $http_response = $this->http_client->get($url, $headers);
         }
 
         return $http_response;
@@ -83,9 +88,22 @@ class EdgeClient {
      * @return The complete URL to the resource.
      */
     private
-    function get_url($path) {
+    function get_url($path, $query_params = []) {
 
-        return $this->base_url . $path;
+        $full_path = $this->base_url . $path;
+
+        if (count($query_params) > 0) {
+
+            $query_string = '?';
+            foreach ($query_params as $key => $value) {
+                $query_string .= $key . '=' . $value . '&';
+            }
+            $query_string = trim($query_string, '&');
+
+            $full_path .= $query_string;
+        }
+
+        return $full_path;
     }
 
     /**
@@ -94,43 +112,17 @@ class EdgeClient {
      * @return an array representing the header keys and values
      */
     private
-    function get_headers() {
+    function get_headers($other_headers) {
 
         if (!$this->access_token) {
              $this->init();
         }
-
-        return [
-             'Authorization' => 'Bearer ' . $this->access_token
-        ];
-    }
-
-    /**
-     * Prepares the request data for a request.
-     *
-     * @param $query_params The query string parameters for the request.
-     * @param $json_data The JSON data in PHP format for the request.
-     *
-     * @return An array representing the request data.
-     */
-    private
-    function prepare_request_data($query_params = null, $json_data = null) {
-
-        $headers = $this->get_headers();
-
-        $request = [
-             'headers' => $headers,
-             //'debug' => true
+        $headers = [
+            'Authorization' => 'Bearer ' . $this->access_token
         ];
 
-        // Set a default context Id based on initialization
-        if ($query_params !== null) {
-            $request['query'] = $query_params;
-        }
-        if ($json_data !== null) {
-            $request['json'] = $json_data;
-        }
+        $headers = array_merge($headers, $other_headers);
 
-        return $request;
+        return $headers;
     }
 }

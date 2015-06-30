@@ -11,6 +11,9 @@ namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Services\Client\EdgeClient;
 use CentralDesktop\FatTail\Services\Client\FatTailClient;
+use CentralDesktop\FatTail\Entities\CD_Account;
+use CentralDesktop\FatTail\Entities\CD_Milestone;
+use CentralDesktop\FatTail\Entities\CD_Workspace;
 
 use League\Csv\Reader;
 use Psr\Log\LoggerAwareTrait;
@@ -20,22 +23,29 @@ class SyncService {
 
     protected $edge_client    = null;
     protected $fattail_client = null;
+    private $cd_accounts = [];
 
     private $PING_INTERVAL    = 5; // In seconds
     private $DONE             = 'done';
     private $tmp_dir          = 'tmp/';
+    private $workspace_template_hash = 'pm';
 
+//    private $WORKSPACE_DYNAMIC_PROP_NAME = 'H_CD_Workspace_ID';
+//    private $MILESTONE_DYNAMIC_PROP_NAME = 'H_CD_Milestone_ID';
     private $SALES_REP_ROLE = 'Salesrep';
+    private $USER_TO_ROLE_PATH_TEMPLATE = 'workspaces/%s/roles/%s/addUsers';
 
     public
     function __construct(
         EdgeClient $edge_client,
         FatTailClient $fattail_client,
-        $tmp_dir = ''
+        $tmp_dir = '',
+        $workspace_template_hash
     ) {
         $this->edge_client    = $edge_client;
         $this->fattail_client = $fattail_client;
         $this->tmp_dir        = $tmp_dir;
+        $this->workspace_template_hash = $workspace_template_hash;
     }
 
     /**
@@ -43,6 +53,7 @@ class SyncService {
      */
     public
     function sync($report_name = '') {
+
 
         $this->logger->info("Starting report sync.\n");
 
@@ -63,7 +74,7 @@ class SyncService {
         }
 
         if ($report === null) {
-            $this->logger->info("Unable to find requested report. Exiting.\n");
+            $this->logger->error("Unable to find requested report. Exiting.\n");
             exit;
         }
 
@@ -71,33 +82,18 @@ class SyncService {
             $report,
             $this->tmp_dir
         );
-
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
-        // Find the dynamic property id for the workspace id
-        $order_workspace_property_id = null;
-        $order_dynamic_properties_list = $this->fattail_client->call(
-            'GetDynamicPropertiesListForOrder'
-        )->GetDynamicPropertiesListForOrderResult;
-        foreach ($order_dynamic_properties_list->DynamicProperty as $prop) {
-            if ($prop->Name === 'H_CD_Workspace_ID') {
-                $order_workspace_property_id = $prop->DynamicPropertyID;
-                break;
-            }
-        }
-
-        // Find the dynamic property id for the milestone id
-        $drop_milestone_property_id = null;
-        $drop_dynamic_properties_list = $this->fattail_client->call(
-            'GetDynamicPropertiesListForDrop'
-        )->GetDynamicPropertiesListForDropResult;
-        foreach ($drop_dynamic_properties_list->DynamicProperty as $prop) {
-            if ($prop->Name === 'H_CD_Milestone_ID') {
-                $drop_milestone_property_id = $prop->DynamicPropertyID;
-                break;
-            }
-        }
+//        $order_workspace_property_id =
+//            $this->get_fattail_order_dynamic_property_id(
+//                $this->WORKSPACE_DYNAMIC_PROP_NAME
+//            );
+//
+//        $drop_milestone_property_id =
+//            $this->get_fattail_drop_dynamic_property_id(
+//                $this->MILESTONE_DYNAMIC_PROP_NAME
+//            );
 
         // Create mapping of column name with column index
         // Not necessary, but makes it easier to work with the data.
@@ -107,16 +103,32 @@ class SyncService {
             $col_map[$name] = $index;
         }
 
-        $this->logger->info("Processing CSV and syncing data.\n");
-        
+        $this->logger->info("Preparing to sync data. Please wait.\n");
+
+        // Populate a local copy of CD accounts, workspace, and milestones
+        $this->cd_accounts = array_map(function ($account) {
+
+            $account->workspaces = array_map(function ($workspace) {
+
+                $workspace->milestones = $this->get_cd_milestones($workspace->hash);
+
+                return $workspace;
+            }, $this->get_cd_workspaces($account->hash));
+
+            return $account;
+        }, $this->get_cd_accounts());
+
         // Iterate over CSV and process data
         // Skip the first and last rows since they
-        // dont have the data we need
+        // don't have the data we need
         for ($i = 1, $len = count($rows) - 1; $i < $len; $i++) {
+            $this->logger->info("Processing next item. Please wait.");
+
             $row = $rows[$i];
 
             // Get client details
             $client_id = $row[$col_map['Client ID']];
+
             $client = $this->fattail_client->call(
                 'GetClient',
                 ['clientId' => $client_id]
@@ -136,52 +148,122 @@ class SyncService {
                 ['dropId' => $drop_id]
             )->GetDropResult;
 
-            /*$order->OrderDynamicProperties = [
-                'DynamicPropertyValue' => [
-                    [
-                        'DynamicPropertyID' => $order_workspace_property_id,
-                        'Value' => 'asdfasdsdf'
-                    ]
-                ]
+            // Process the client
+            $cd_account = $this->find_account_by_c_client_id($client->ClientID);
+
+            if ($cd_account === null) {
+                // Create a new CD Account
+                $custom_fields = [
+                    'c_client_id' => $client->ClientID
+                ];
+                $cd_account = $this->create_cd_account(
+                    $client->Name,
+                    $custom_fields
+                );
+
+                $this->cd_accounts[$cd_account->hash] = $cd_account;
+            }
+
+            if ($client->ExternalID === '') {
+                // Update the FatTail client external id
+                // if it doesn't have a value
+                $client->ExternalID = $cd_account->hash;
+
+                // Update the FatTail Client with the
+                // CD Account hash
+                $this->fattail_client->call(
+                    'UpdateClient',
+                    ['client' => $client]
+                );
+            }
+
+            // Process the order
+            $cd_workspace = $cd_account->find_workspace_by_c_order_id($order->OrderID);
+            if ($cd_workspace === null) {
+
+                $custom_fields = [
+                    'c_order_id'            => $order->OrderID,
+                    'c_campaign_status'     => $row[$col_map['IO Status']],
+                    'c_campaign_start_date' => $row[$col_map['Campaign Start Date']],
+                    'c_campaign_end_date'   => $row[$col_map['Campaign End Date']]
+                ];
+                $cd_workspace = $this->create_cd_workspace(
+                    $cd_account->hash,
+                    $row[$col_map['Campaign Name']],
+                    $this->workspace_template_hash,
+                    $custom_fields
+                );
+
+                $cd_account->workspaces[$cd_workspace->hash] = $cd_workspace;
+            }
+
+            // TODO Update dynamic field
+
+            // TODO uncomment when live
+//            $this->fattail_client->call(
+//                'UpdateOrder',
+//                ['order' => $order]
+//            );
+
+            // Assign Salesrole
+            // Splitting name, assuming only first and last name in
+            // 'Last,' First format
+            $sales_rep_name = $row[$col_map['Sales Rep']];
+            $name_parts = explode(', ', $sales_rep_name);
+            $full_name = strtolower($name_parts[1] . ' ' . $name_parts[0]);
+
+            $this->assign_user_to_role(
+                $full_name,
+                $this->SALES_REP_ROLE,
+                $cd_workspace->hash
+            );
+
+            // Process the drop
+            $cd_milestone = $cd_workspace->find_milestone_by_c_drop_id($drop->DropID);
+            $custom_fields = [
+                'c_drop_id'              => $drop->DropID,
+                'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
+                'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
+                'c_drop_cost_new'        => $row[$col_map['Sold Amount']]
             ];
-            $order_array = $this->convert_to_arrays($order);
-            $this->fattail_client->call(
-                'UpdateOrder',
-                ['order' => $order_array]
-            );
+            if ($cd_milestone === null) {
 
-            $order = $this->fattail_client->call(
-                'GetOrder',
-                ['orderId' => $order_id]
-            )->GetOrderResult;*/
+                $cd_milestone = $this->create_cd_milestone(
+                    $cd_workspace->hash,
+                    $row[$col_map['Position Path']],
+                    $row[$col_map['Drop Description']],
+                    $row[$col_map['Start Date']],
+                    $row[$col_map['End Date']],
+                    $custom_fields
+                );
 
-            //print_r($order);
+                $cd_workspace->milestones[$cd_milestone->hash] = $cd_milestone;
+            }
+            else {
 
-            //exit;
-            $client = $this->sync_client_to_account($client, $rows[$i]);
+                $status = $this->update_cd_milestone(
+                    $cd_milestone->hash,
+                    $row[$col_map['Position Path']],
+                    $row[$col_map['Drop Description']],
+                    $row[$col_map['Start Date']],
+                    $row[$col_map['End Date']],
+                    $custom_fields
+                );
 
-            // Check client to account sync
-            $account_hash = $client->ExternalID;
+                if (!$status) {
+                    $this->logger->warning(
+                        "Failed to updated a milestone. Continuing."
+                    );
+                }
+            }
 
-            // Check order to workspace sync
-            $workspace_hash = $rows[$i][$col_map['(Campaign) CD Workspace ID']];
-            $order = $this->sync_order_to_workspace(
-                $order,
-                $account_hash,
-                $workspace_hash,
-                $rows[$i],
-                $col_map
-            );
-            /*$workspace_hash = $order->OrderDynamicProperties; // TODO Get the CD Workspace ID
+            // TODO Update dynamic field
 
-            $drop = $this->sync_drop_to_milestone(
-                $drop,
-                $drop_id,
-                $workspace_hash,
-                $rows[$i],
-                $col_map
-            );
-            $milestone_hash = $drop->DropDynamicProperties; //TODO Get milestone hash from dynamic properties*/
+            // TODO uncomment when live
+//            $this->fattail_client->call(
+//                'UpdateDrop',
+//                ['drop' => $drop]
+//            );
         }
 
         $this->logger->info("Finished report sync.\n");
@@ -274,7 +356,7 @@ class SyncService {
 
         if (is_dir($dir)) {
 
-            // Delete all files within the directory
+            // Delete all csv files within the directory
             array_map('unlink', glob($dir . '*.csv'));
 
             // Delete the directory
@@ -291,7 +373,7 @@ class SyncService {
      * @return A Psr\Http\Message\ResponseInterface object
      */
     protected
-    function create_cd_entity($path, $details) {
+    function cd_post($path, $details) {
 
         $http_response = null;
         try {
@@ -301,20 +383,6 @@ class SyncService {
                 [],
                 $details
             );
-        }
-        catch (\GuzzleHttp\Exception\ClientException $e) {
-            // Failed to create new entity
-            $this->logger->error('Bad request to Edge API');
-            $this->logger->error($e);
-            $this->logger->error('Exiting.');
-            exit;
-        }
-        catch (\GuzzleHttp\Exception\ServerException $e) {
-            // Failed to create new entity
-            $this->logger->error('Server error on Edge API');
-            $this->logger->error($e);
-            $this->logger->error('Exiting.');
-            exit;
         }
         catch (\Exception $e) {
             // Failed to create new entity
@@ -333,7 +401,7 @@ class SyncService {
      * @param $name The account name.
      * @param $custom_fields An array of custom fields.
      *
-     * @returns The account hash of the new account.
+     * @returns A new CD_Account
      */
     private
     function create_cd_account($name, $custom_fields = []) {
@@ -345,10 +413,16 @@ class SyncService {
         $path = 'accounts';
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
 
-        $http_response = $this->create_cd_entity($path, $details);
+        $http_response = $this->cd_post($path, $details);
 
-        // Return the id of the account
-        return $http_response->getBody()->getContents();
+        $account_hash = $http_response->getContent();
+
+        $account = new CD_Account(
+            $account_hash,
+            $custom_fields['c_client_id']
+        );
+
+        return $account;
     }
 
     /**
@@ -356,32 +430,36 @@ class SyncService {
      *
      * @param $account_id The CD account id this workspace will be under.
      * @param $name The name of the workspace.
-     * @param $custom_fields An array of custom fields.
-     * @param $order_id The FatTail order id.
-     * @param $status The FatTail order status.
-     * @param $start_date The FatTail campaign start date.
-     * @param $end_date The FatTail campaign end date.
+     * @param $template_hash The hash of the workspace template.
+     * @param $custom_fields The custom fields of the workspace.
      *
-     * @return TODO
+     * @return A new CD_Workspace
      */
     private
     function create_cd_workspace(
         $account_id,
         $name,
+        $template_hash,
         $custom_fields = []
     ) {
         $details = new \stdClass();
         $details->workspaceName = $name;
-        $details->workspaceType = 'WzIxLDQ2NDA1MV0'; // TODO The real hash of the workspace template
+        $details->workspaceType = $template_hash; // TODO The real hash of the workspace template
 
         // Prepare data for request
         $path = 'accounts/' . $account_id . '/workspaces';
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
 
-        $http_response = $this->create_cd_entity($path, $details);
+        $http_response = $this->cd_post($path, $details);
 
-        // Return the id of the workspace
-        return $http_response->getBody()->getContents();
+        $workspace_hash = $http_response->getContent();
+
+        $workspace = new CD_Workspace(
+            $workspace_hash,
+            $custom_fields['c_order_id']
+        );
+
+        return $workspace;
     }
 
     /**
@@ -395,7 +473,7 @@ class SyncService {
      * @param $end_date The end date of the milestone.
      * @param $custom_fields An array of custom fields.
      *
-     * @return The milestone hash.
+     * @return A new CD_Milestone.
      */
     private
     function create_cd_milestone(
@@ -417,10 +495,16 @@ class SyncService {
         // Create a new milestone
         $path = 'workspaces/' . $workspace_id . '/milestones';
 
-        $http_response = $this->create_cd_entity($path, $details);
+        $http_response = $this->cd_post($path, $details);
 
-        // Return the id of the workspace
-        return $http_response->getBody()->getContents();
+        $milestone_hash = $http_response->getContent();
+
+        $milestone = new CD_Milestone(
+            $milestone_hash,
+            $custom_fields['c_drop_id']
+        );
+
+        return $milestone;
     }
 
     /**
@@ -434,7 +518,7 @@ class SyncService {
      * @param $end_date The end date of the milestone.
      * @param $custom_fields An array of custom fields.
      *
-     * @return The milestone hash.
+     * @return True on success, false otherwise
      */
     private
     function update_cd_milestone(
@@ -447,32 +531,18 @@ class SyncService {
     ) {
         $details = new \stdClass();
         $details->title = $name;
-        $details->description = $description;
         $details->start_date = $start_date;
         $details->end_date = $end_date;
+        $details->description = $description;
+        $details->reminders = [''];
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
 
         // Create a new milestone
         $path = 'milestones/' . $milestone_id . '/updateDetail';
 
-        $http_response = $this->create_cd_entity($path, $details);
+        $http_response = $this->cd_post($path, $details);
 
-        // Check if create wasn't successful
-        if (
-            $http_response == null ||
-            $http_response->getStatusCode() !== 201
-        ) {
-            // TODO
-        }
-
-        // Call milestone endpoint to get the latest hash
-        $response = $this->edge_client->call(
-            EdgeClient::METHOD_GET,
-            $path
-        );
-        $workspaces = json_decode($response->getBody());
-
-        return $milestones_id;
+        return $http_response->isSuccessful();
     }
 
     /**
@@ -491,7 +561,7 @@ class SyncService {
             'users'
         );
 
-        $users = json_decode($http_response->getBody())->items;
+        $users = json_decode($http_response->getContent())->items;
 
         $full_name_lower = strtolower($full_name);
 
@@ -512,217 +582,25 @@ class SyncService {
      * @return The role id.
      */
     private
-    function get_cd_role_id_by_name($name) {
-        
+    function get_cd_role_id_by_name($name)
+    {
+
         $http_response = $this->edge_client->call(
             EdgeClient::METHOD_GET,
             'roles'
         );
 
-        $roles = json_decode($http_response->getBody())->items;
+        $roles = json_decode($http_response->getContent())->items;
 
         $name_lower = strtolower($name);
 
-        $role = array_filter($roles, function ($role) use ($name_lower) {
-            $title_lower = strtolower($role->details->title);
-
-            return $title_lower === $name_lower;
-        });
-
-        return count($role) > 0 ? $role[0]->id : null;
-    }
-
-    /**
-     * Syncs FatTail clients with Central Desktop accounts.
-     *
-     * @param $client The FatTail client which
-     *                corresponds to a CD account.
-     * @param $rows The report data.
-     *
-     * @return The (un)updated client.
-     */
-    private
-    function sync_client_to_account($client, $rows) {
-        
-        $account_hash = $client->ExternalID;
-        if ($account_hash === '') {
-
-            // Create CD account
-            $custom_fields = [
-                'c_client_id' => $client->ClientID
-            ];
-            $account_hash = $this->create_cd_account(
-                $client->Name,
-                $custom_fields
-            );
-
-            // Update client external id with new account hash
-            $client->ExternalID = $account_hash;
-        }
-            
-        // Update FatTail client
-        /*$client_array = $this->convert_to_arrays($client);
-        $this->fattail_client->call(
-            'UpdateClient',
-            ['client' => $client_array]
-        );*/
-
-        return $client;
-    }
-
-    /**
-     * Syncs FatTail orders with Central Desktop workspaces.
-     *
-     * @param $order The FatTail order which
-     *                     corresponds to a CD workspace.
-     * @param $account_hash The hash of the CD account.
-     * @param $workspace_hash The hash of the CD workspace.
-     * @param $row The report data.
-     * @param $col_map The report data column mapping.
-     *
-     * @return The (un)updated order.
-     */
-    private
-    function sync_order_to_workspace(
-        $order,
-        $account_hash,
-        $workspace_hash,
-        $row,
-        $col_map
-    ) {
-        
-        if ($workspace_hash === '') {
-
-            $custom_fields = [
-                'c_order_id'            => $order->OrderID,
-                'c_campaign_status'     => $row[$col_map['IO Status']],
-                'c_campaign_start_date' => $row[$col_map['Campaign Start Date']],
-                'c_campaign_end_date'   => $row[$col_map['Campaign End Date']]
-            ];
-            $workspace_hash = $this->create_cd_workspace(
-                $account_hash,
-                $row[$col_map['Campaign Name']],
-                $custom_fields
-            );
-
-            // Update the CD Workspace ID on FatTail order
-            // TODO This is not correct, working on finding something that
-            // works
-            $old_properties = [];
-            if (
-                property_exists($order, 'OrderDynamicProperties') &&
-                $order->OrderDynamicProperties !== null
-            ) {
-                $old_properties = $this->convert_to_arrays(
-                    $order->OrderDynamicProperties
-                );
+        foreach ($roles as $role) {
+            if (strtolower($role->details->title) === $name_lower) {
+                return $role->id;
             }
-            $new_properties = array_merge($old_properties, [
-                'CD Workspace ID' => $workspace_hash
-            ]);
-            $order->OrderDynamicProperties = $new_properties;
-
-            // Get sales rep information and set role for account
-
-            // Splitting name, assuming only first and last name in
-            // 'Last,' First format
-            $sales_rep_name = $row[$col_map['Sales Rep']];
-            $name_parts = explode(', ', $sales_rep_name);
-            $full_name = strtolower($name_parts[1] . ' ' . $name_parts[0]);
-
-            $this->assign_user_to_role(
-                $full_name,
-                $this->SALES_REP_ROLE,
-                $workspace_hash
-            );
         }
 
-        // Update FatTail order
-        /*$order_array = $this->convert_to_arrays($order);
-        $this->fattail_client->call(
-            'UpdateOrder',
-            ['order' => $order_array]
-        );*/
-
-        return $order;
-    }
-
-    /**
-     * Syncs FatTail drops with Central Desktop milestones.
-     *
-     * @param $drop The FatTail drop which
-     *              corresponds to a CD milestone.
-     * @param $drop_id The id of the FatTail drop.
-     * @param $workspace_hash The hash of the CD workspace.
-     * @param $row The report data.
-     * @param $col_map The report data column mapping.
-     *
-     * @return The (un)updated drop.
-     */
-    private
-    function sync_drop_to_milestone($drop, $drop_id, $workspace_hash, $row, $col_map) {
-
-            // Check drop to milestone sync
-            $milestone_hash = $row[$col_map['(Drop) CD Milestone ID']];
-            $custom_fields = [
-                'c_drop_id'              => $drop_id,
-                'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
-                'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
-                'c_drop_cost_new'        => $row[$col_map['Sold Amount']]
-            ];
-            if ($milestone_hash === '') {
-
-                /*$milestone_hash = $this->create_cd_milestone(
-                    $workspace_hash,
-                    $row[$col_map['Position Path']],
-                    $row[$col_map['Drop Description']],
-                    $row[$col_map['Start Date']],
-                    $row[$col_map['End Date']],
-                    $custom_fields
-                );*/
-
-            }
-            else {
-                // Update milestone with latest drop data
-
-                /*$milestone_hash = $this->update_cd_milestone(
-                    $milestone_hash,
-                    $row[$col_map['Position Path']],
-                    $row[$col_map['Drop Description']],
-                    $row[$col_map['Start Date']],
-                    $row[$col_map['End Date']],
-                    $custom_fields
-                );*/
-
-                // TODO Gets sales rep information
-                // and set role for account
-            }
-
-            // Update the CD Milestone ID on FatTail drop
-            // TODO This is not correct, working on finding something that
-            // works
-            $old_properties = [];
-            if (
-                property_exists($drop, 'DropDynamicProperties') &&
-                $drop>DropDynamicProperties !== null
-            ) {
-                $old_properties = $this->convert_to_arrays(
-                    $drop>DropDynamicProperties
-                );
-            }
-            $new_properties = array_merge($old_properties, [
-                'CD Milestone ID' => $milestone_hash
-            ]);
-            $drop->DropDynamicProperties = $new_properties;
-
-            // Update FatTail drop
-            /*$drop_array = $this->convert_to_arrays($drop);
-            $this->fattail_client->call(
-                'UpdateDrop',
-                ['drop' => $drop_array]
-            );*/
-
-            return $drop;
+        return null;
     }
 
     /**
@@ -731,6 +609,7 @@ class SyncService {
      *
      * @param $full_name The user's full name.
      * @param $role_name The role's name.
+     * @param $workspace_hash The workspace's hash.
      */
     private
     function assign_user_to_role($full_name, $role_name, $workspace_hash) {
@@ -740,12 +619,12 @@ class SyncService {
 
         $role_hash = $this->get_cd_role_id_by_name($role_name);
 
-        if ($user_hash === null) {
-            $this->logger->info('Failed to find Sales Rep user. ' .
+        if ($user_hash == null) {
+            $this->logger->warning('Failed to find Sales Rep user. ' .
                 'Continuing without assigning a user to Salesrep role.');
         }
         else if ($role_hash == null) {
-            $this->logger->info('Failed to find Central Desktop role.' .
+            $this->logger->warning('Failed to find Central Desktop role.' .
                 'Make sure a \'Salesrep\' role exists. ' .
                 'Continuing without assigning a user to Salesrep role.');
         }
@@ -753,7 +632,7 @@ class SyncService {
 
             // Add user to 'Salesrep' workspace role
             $add_user_to_role_path = sprintf(
-                'workspaces/%s/roles/%s/addUser',
+                $this->USER_TO_ROLE_PATH_TEMPLATE,
                 $workspace_hash,
                 $role_hash
             );
@@ -762,14 +641,10 @@ class SyncService {
                 $user_hash
             ];
             $body->clearExisting = false;
-            //$http_response = $this->edge_client->call(
-            //    EdgeClient::METHOD_POST,
-            //    $add_user_to_role_path,
-            //    [],
-            //    $body
-            //);
-
-            // TODO check if add user to role was successful
+            $http_response = $this->cd_post(
+                $add_user_to_role_path,
+                $body
+            );
         }
     }
 
@@ -816,5 +691,195 @@ class SyncService {
         $item->value = $value;
 
         return $item;
+    }
+
+    /**
+     * Gets all the cd accounts.
+     */
+    private
+    function get_cd_accounts() {
+
+        $path = 'accounts';
+        $http_response = $this->edge_client->call(
+                             EdgeClient::METHOD_GET,
+                             $path
+                         );
+
+        $data = json_decode($http_response->getContent())->items;
+        $accounts = [];
+        foreach ($data as $account_data) {
+
+            $c_client_id = null;
+            if (property_exists($account_data->details, 'customFields')) {
+                $custom_fields = $account_data->details->customFields;
+                foreach ($custom_fields as $field) {
+                    if ($field->fieldApiId === 'c_client_id') {
+                        // We only care about the client id
+                        $c_client_id = $field->value;
+                    }
+                }
+            }
+
+            $accounts[$account_data->id] = new CD_Account(
+                $account_data->id,
+                $c_client_id
+            );
+        }
+
+        return $accounts;
+    }
+
+    /**
+     * Gets all the cd workspaces.
+     */
+    private
+    function get_cd_workspaces($account_hash) {
+
+        $path = 'accounts/' . $account_hash . '/workspaces';
+        $http_response = $this->edge_client->call(
+                             EdgeClient::METHOD_GET,
+                             $path
+                         );
+
+        $workspaces = [];
+        $json = json_decode($http_response->getContent());
+        if (property_exists($json, 'items')) {
+
+            $data = $json->items;
+            foreach ($data as $workspace_data) {
+
+                // Skip deleted workspaces
+                if (preg_match('/^deleted.*/', $workspace_data->details->urlShortName)) {
+                    continue;
+                }
+
+                $c_order_id = null;
+                if (property_exists($workspace_data->details, 'customFields')) {
+                    $custom_fields = $workspace_data->details->customFields;
+                    foreach ($custom_fields as $field) {
+                        if ($field->fieldApiId === 'c_order_id') {
+                            // We only care about the order id
+                            $c_order_id = $field->value;
+                        }
+                    }
+                }
+
+                $workspaces[$workspace_data->id] = new CD_Workspace(
+                    $workspace_data->id,
+                    $c_order_id
+                );
+            }
+        }
+
+        return $workspaces;
+    }
+
+    /**
+     * Gets all the cd milestones.
+     *
+     * @param $workspace_hash The CD workspace hash
+     * @return An array of CD_Milestones belonging to workspace
+     */
+    private
+    function get_cd_milestones($workspace_hash) {
+
+        $path = 'workspaces/' . $workspace_hash . '/milestones';
+        $http_response = $this->edge_client->call(
+                             EdgeClient::METHOD_GET,
+                             $path
+                         );
+        $milestones = [];
+        $json = json_decode($http_response->getContent());
+        if (property_exists($json, 'items')) {
+
+            $data = $json->items;
+            foreach ($data as $milestone_data) {
+
+                $c_drop_id = null;
+                if (property_exists($milestone_data->details, 'customFields')) {
+                    $custom_fields = $milestone_data->details->customFields;
+                    foreach ($custom_fields as $field) {
+                        if ($field->fieldApiId === 'c_drop_id') {
+                            // We only care about the drop id
+                            $c_drop_id = $field->value;
+                        }
+                    }
+                }
+
+                $milestones[$milestone_data->id] = new CD_Milestone(
+                    $milestone_data->id,
+                    $c_drop_id
+                );
+            }
+        }
+
+        return $milestones;
+    }
+
+    /**
+     * Finds a single instance of a CD account by c_client_id.
+     *
+     * @param $c_client_id The FatTail client id
+     * @return CD_Account with $c_client_id or null if not found
+     */
+    private
+    function find_account_by_c_client_id($c_client_id) {
+
+        foreach ($this->cd_accounts as $account) {
+
+            if ($account->c_client_id == $c_client_id) {
+                return $account;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Finds and returns the id of the order dynamic property
+     * in FatTail.
+     *
+     * @param $name The name of the order dynamic property.
+     * @return The order dynamic property id if found, else null
+     */
+    private
+    function get_fattail_order_dynamic_property_id($name) {
+
+        // Find the dynamic property id for the workspace id
+        $order_workspace_property_id = null;
+        $order_dynamic_properties_list = $this->fattail_client->call(
+            'GetDynamicPropertiesListForOrder'
+        )->GetDynamicPropertiesListForOrderResult;
+        foreach ($order_dynamic_properties_list->DynamicProperty as $prop) {
+            if ($prop->Name === $name) {
+                return $prop->DynamicPropertyID;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Finds and returns the id of the drop dynamic property
+     * in FatTail.
+     *
+     * @param $name The name of the drop dynamic property.
+     * @return The drop dynamic property id if found, else null
+     */
+    private
+    function get_fattail_drop_dynamic_property_id($name) {
+
+        // Find the dynamic property id for the milestone id
+        $drop_milestone_property_id = null;
+        $drop_dynamic_properties_list = $this->fattail_client->call(
+            'GetDynamicPropertiesListForDrop'
+        )->GetDynamicPropertiesListForDropResult;
+        foreach ($drop_dynamic_properties_list->DynamicProperty as $prop) {
+            if ($prop->Name === $name) {
+                return $prop->DynamicPropertyID;
+            }
+        }
+
+        return null;
     }
 }
