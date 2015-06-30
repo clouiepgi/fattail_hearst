@@ -30,7 +30,7 @@ class EdgeAuth {
         $grant_type,
         $client_id,
         $private_key,
-        \GuzzleHttp\Client $client
+        \Buzz\Browser $client
     ) {
         $this->auth_url = $auth_url;
         $this->issuer = $issuer;
@@ -66,11 +66,11 @@ class EdgeAuth {
         try {
             $http_response = $this->client->post(
                 $this->auth_url,
-                [
-                    'form_params' => $form_params
-                ]
+                ['Content-Type' => 'application/json'],
+                json_encode($form_params)
             );
-            $json_response = json_decode($http_response->getBody());
+
+            $json_response = json_decode($http_response->getContent());
 
             $access_token = $json_response->access_token;
         }

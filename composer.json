@@ -19,7 +19,6 @@
     "symfony/yaml":                 "^2.7",
     "league/csv":                   "^7.1",
     "monolog/monolog":              "^1.13",
-    "guzzlehttp/guzzle":            "^6.0.1",
     "firebase/php-jwt":             "^2.1.0",
     "osucomm/ws-soap":              "^0.1.0",
     "kriswallsmith/buzz":           "^0.15"
