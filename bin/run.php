@@ -3,7 +3,6 @@ date_default_timezone_set('America/Los_Angeles');
 
 require_once("vendor/autoload.php");
 
-
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;

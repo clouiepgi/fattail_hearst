@@ -358,9 +358,6 @@ class SyncService {
 
             // Delete all csv files within the directory
             array_map('unlink', glob($dir . '*.csv'));
-
-            // Delete the directory
-            rmdir($dir);
         }
     }
 
