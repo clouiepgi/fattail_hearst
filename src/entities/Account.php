@@ -5,13 +5,31 @@ namespace  CentralDesktop\FatTail\Entities;
 class Account extends Entity {
 
     public $c_client_id = null;
-    public $workspaces = [];
-    public $fattail_client = null;
+    private $workspaces = [];
 
-    function __construct($hash, $c_client_id, $fattail_client = null) {
+    function __construct($hash, $c_client_id) {
         parent::__construct($hash);
         $this->c_client_id = $c_client_id;
-        $this->fattail_client = $fattail_client;
+    }
+
+    /**
+     * Sets the workspaces.
+     *
+     * @param $workspaces The workspaces.
+     */
+    public
+    function set_workspaces($workspaces) {
+        $this->workspaces = $workspaces;
+    }
+
+    /**
+     * Adds a workspaces.
+     *
+     * @param Workspace $workspace
+     */
+    public
+    function add_workspace(Workspace $workspace) {
+        $this->workspaces[$workspace->c_order_id] = $workspace;
     }
 
     /**
@@ -23,10 +41,8 @@ class Account extends Entity {
     public
     function find_workspace_by_c_order_id($c_order_id) {
 
-        foreach ($this->workspaces as $workspace) {
-            if ($workspace->c_order_id == $c_order_id) {
-                return $workspace;
-            }
+        if (array_key_exists($c_order_id, $this->workspaces)) {
+            return $this->workspaces[$c_order_id];
         }
 
         return null;

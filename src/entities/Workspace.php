@@ -2,18 +2,36 @@
 
 namespace  CentralDesktop\FatTail\Entities;
 
-class Workspace extends CD_Entity {
+class Workspace extends Entity {
 
     public $c_order_id = null;
     public $milestones = [];
-    public $fattail_order = null;
 
 
-    function __construct($hash, $c_order_id, $fattail_order = null) {
+    function __construct($hash, $c_order_id) {
         parent::__construct($hash);
         $this->hash = $hash;
         $this->c_order_id = $c_order_id;
-        $this->fattail_order = $fattail_order;
+    }
+
+    /**
+     * Sets the milestones.
+     *
+     * @param $milestones The milestones.
+     */
+    public
+    function set_milestones($milestones) {
+        $this->milestones = $milestones;
+    }
+
+    /**
+     * Adds a milestone.
+     *
+     * @param Milestone $milestone
+     */
+    public
+    function add_milestone(Milestone $milestone) {
+        $this->milestones[$milestone->c_drop_id] = $milestone;
     }
 
     /**
@@ -25,10 +43,8 @@ class Workspace extends CD_Entity {
     public
     function find_milestone_by_c_drop_id($c_drop_id) {
 
-        foreach ($this->milestones as $milestone) {
-            if ($milestone->c_drop_id == $c_drop_id) {
-                return $milestone;
-            }
+        if (array_key_exists($c_drop_id, $this->milestones)) {
+            return $this->milestones[$c_drop_id];
         }
 
         return null;

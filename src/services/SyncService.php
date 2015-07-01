@@ -88,15 +88,15 @@ class SyncService {
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
-//        $order_workspace_property_id =
-//            $this->get_fattail_order_dynamic_property_id(
-//                $this->WORKSPACE_DYNAMIC_PROP_NAME
-//            );
-//
-//        $drop_milestone_property_id =
-//            $this->get_fattail_drop_dynamic_property_id(
-//                $this->MILESTONE_DYNAMIC_PROP_NAME
-//            );
+        $order_workspace_property_id =
+            $this->get_fattail_order_dynamic_property_id(
+                $this->WORKSPACE_DYNAMIC_PROP_NAME
+            );
+
+        $drop_milestone_property_id =
+            $this->get_fattail_drop_dynamic_property_id(
+                $this->MILESTONE_DYNAMIC_PROP_NAME
+            );
 
         // Create mapping of column name with column index
         // Not necessary, but makes it easier to work with the data.
@@ -111,12 +111,14 @@ class SyncService {
         // Populate a local copy of CD accounts, workspace, and milestones
         $this->cd_accounts = array_map(function ($account) {
 
-            $account->workspaces = array_map(function ($workspace) {
+            $account->set_workspaces(array_map(function ($workspace) {
 
-                $workspace->milestones = $this->get_cd_milestones($workspace->hash);
+                $workspace->set_milestones(
+                    $this->get_cd_milestones($workspace->hash)
+                );
 
                 return $workspace;
-            }, $this->get_cd_workspaces($account->hash));
+            }, $this->get_cd_workspaces($account->hash)));
 
             return $account;
         }, $this->get_cd_accounts());
@@ -152,8 +154,7 @@ class SyncService {
             )->GetDropResult;
 
             // Process the client
-            $cd_account = $this->find_account_by_c_client_id($client->ClientID);
-
+            $cd_account = $this->cd_accounts[$client->ClientID];
             if ($cd_account === null) {
                 // Create a new CD Account
                 $custom_fields = [
@@ -181,7 +182,9 @@ class SyncService {
             }
 
             // Process the order
-            $cd_workspace = $cd_account->find_workspace_by_c_order_id($order->OrderID);
+            $cd_workspace = $cd_account->find_workspace_by_c_order_id(
+                $order->OrderID
+            );
             if ($cd_workspace === null) {
 
                 $custom_fields = [
@@ -222,7 +225,9 @@ class SyncService {
             );
 
             // Process the drop
-            $cd_milestone = $cd_workspace->find_milestone_by_c_drop_id($drop->DropID);
+            $cd_milestone = $cd_workspace->find_milestone_by_c_drop_id(
+                $drop->DropID
+            );
             $custom_fields = [
                 'c_drop_id'              => $drop->DropID,
                 'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
@@ -556,12 +561,35 @@ class SyncService {
     private
     function get_cd_user_id_by_name($full_name) {
 
-        $http_response = $this->edge_client->call(
-            EdgeClient::METHOD_GET,
-            'users'
-        );
+        $users = [];
+        $last_record = '';
+        $path         = 'users';
 
-        $users = json_decode($http_response->getContent())->items;
+        do {
+
+            $query_params = ['limit' => 100];
+
+            if ($last_record !== '') {
+                $query_params['lastRecord'] = $last_record;
+            }
+            $http_response = $this->edge_client->call(
+                EdgeClient::METHOD_GET,
+                $path,
+                $query_params
+            );
+
+            $json = json_decode($http_response->getContent());
+            if (property_exists($json, 'items')) {
+                $users = array_merge(
+                    $users,
+                    $json->items);
+            }
+            else {
+                break;
+            }
+
+            $last_record = $json->lastRecord;
+        } while ($last_record !== '');
 
         $full_name_lower = strtolower($full_name);
 
@@ -664,57 +692,96 @@ class SyncService {
 
     /**
      * Gets all the cd accounts.
+     *
+     * @return An array of Accounts.
      */
     private
     function get_cd_accounts() {
 
-        $path = 'accounts';
-        $http_response = $this->edge_client->call(
-                             EdgeClient::METHOD_GET,
-                             $path
-                         );
+        $accounts    = [];
+        $last_record = '';
+        $path         = 'accounts';
 
-        $data = json_decode($http_response->getContent())->items;
-        $accounts = [];
-        foreach ($data as $account_data) {
+        do {
 
-            $c_client_id = null;
-            if (property_exists($account_data->details, 'customFields')) {
-                $custom_fields = $account_data->details->customFields;
-                foreach ($custom_fields as $field) {
-                    if ($field->fieldApiId === 'c_client_id') {
-                        // We only care about the client id
-                        $c_client_id = $field->value;
+            $query_params = ['limit' => 100];
+
+            if ($last_record !== '') {
+                $query_params['lastRecord'] = $last_record;
+            }
+            $http_response = $this->edge_client->call(
+                EdgeClient::METHOD_GET,
+                $path,
+                $query_params
+            );
+
+            $json = json_decode($http_response->getContent());
+            if (property_exists($json, 'items')) {
+                $data = $json->items;
+            }
+            else {
+                break;
+            }
+            foreach ($data as $account_data) {
+
+                $c_client_id = null;
+                if (property_exists($account_data->details, 'customFields')) {
+
+                    $custom_fields = $account_data->details->customFields;
+                    foreach ($custom_fields as $field) {
+                        if ($field->fieldApiId === 'c_client_id') {
+                            // We only care about the client id
+                            $c_client_id = $field->value;
+                        }
                     }
                 }
+
+                $accounts[$c_client_id] = new Account(
+                    $account_data->id,
+                    $c_client_id
+                );
             }
 
-            $accounts[$account_data->id] = new Account(
-                $account_data->id,
-                $c_client_id
-            );
-        }
+            $last_record = $json->lastRecord;
+        } while ($last_record !== '');
 
         return $accounts;
     }
 
     /**
      * Gets all the cd workspaces.
+     *
+     * @param $account_hash The account hash of the workspaces.
+     * @return An array of workspaces belonging to account.
      */
     private
     function get_cd_workspaces($account_hash) {
 
-        $path = 'accounts/' . $account_hash . '/workspaces';
-        $http_response = $this->edge_client->call(
-                             EdgeClient::METHOD_GET,
-                             $path
-                         );
+        $workspaces  = [];
+        $last_record = '';
+        $path         = 'accounts/' . $account_hash . '/workspaces';
 
-        $workspaces = [];
-        $json = json_decode($http_response->getContent());
-        if (property_exists($json, 'items')) {
+        do {
 
-            $data = $json->items;
+            $query_params = ['limit' => 100];
+
+            if ($last_record !== '') {
+                $query_params['lastRecord'] = $last_record;
+            }
+            $http_response = $this->edge_client->call(
+                EdgeClient::METHOD_GET,
+                $path,
+                $query_params
+            );
+
+            $json = json_decode($http_response->getContent());
+            if (property_exists($json, 'items')) {
+                $data = $json->items;
+            }
+            else {
+                break;
+            }
+
             foreach ($data as $workspace_data) {
 
                 // Skip deleted workspaces
@@ -724,6 +791,7 @@ class SyncService {
 
                 $c_order_id = null;
                 if (property_exists($workspace_data->details, 'customFields')) {
+
                     $custom_fields = $workspace_data->details->customFields;
                     foreach ($custom_fields as $field) {
                         if ($field->fieldApiId === 'c_order_id') {
@@ -733,12 +801,14 @@ class SyncService {
                     }
                 }
 
-                $workspaces[$workspace_data->id] = new Workspace(
+                $workspaces[$c_order_id] = new Workspace(
                     $workspace_data->id,
                     $c_order_id
                 );
             }
-        }
+
+            $last_record = $json->lastRecord;
+        } while ($last_record !== '');
 
         return $workspaces;
     }
@@ -752,16 +822,32 @@ class SyncService {
     private
     function get_cd_milestones($workspace_hash) {
 
-        $path = 'workspaces/' . $workspace_hash . '/milestones';
-        $http_response = $this->edge_client->call(
-                             EdgeClient::METHOD_GET,
-                             $path
-                         );
-        $milestones = [];
-        $json = json_decode($http_response->getContent());
-        if (property_exists($json, 'items')) {
 
-            $data = $json->items;
+        $milestones = [];
+        $last_record = '';
+        $path = 'workspaces/' . $workspace_hash . '/milestones';
+
+        do {
+
+            $query_params = ['limit' => 100];
+
+            if ($last_record !== '') {
+                $query_params['lastRecord'] = $last_record;
+            }
+            $http_response = $this->edge_client->call(
+                EdgeClient::METHOD_GET,
+                $path,
+                $query_params
+            );
+
+            $json = json_decode($http_response->getContent());
+            if (property_exists($json, 'items')) {
+                $data = $json->items;
+            }
+            else {
+                break;
+            }
+
             foreach ($data as $milestone_data) {
 
                 $c_drop_id = null;
@@ -775,12 +861,19 @@ class SyncService {
                     }
                 }
 
-                $milestones[$milestone_data->id] = new Milestone(
+                $milestones[$c_drop_id] = new Milestone(
                     $milestone_data->id,
                     $c_drop_id
                 );
             }
-        }
+
+            if (property_exists($json, 'lastRecord')) {
+                $last_record = $json->lastRecord;
+            }
+            else {
+                $last_record = '';
+            }
+        } while($last_record !== '');
 
         return $milestones;
     }
