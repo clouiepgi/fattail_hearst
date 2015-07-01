@@ -17,12 +17,31 @@ class FatTailClient {
     protected $soap_client = null;
 
     public
-    function __construct(\WsSoap\Client $soap_client) {
+    function __construct(
+        \WsSoap\Client $soap_client,
+        \SoapHeader $api_version_header
+    ) {
         $this->soap_client = $soap_client;
+        $this->soap_client->__setSoapHeaders($api_version_header);
     }
 
     public
-    function call($name, $params = null) {
-        return $this->soap_client->$name($params);
+    function call($name, $params = []) {
+
+        $response = null;
+        try {
+            $response = $this->soap_client->$name($params);
+        }
+        catch (\Exception $e) {
+
+            $this->logger->error(
+                'Failed to make a SOAP call to FatTail. Exiting.'
+            );
+            print_r($this->soap_client->__getLastRequest());
+            exit;
+        }
+        print_r($this->soap_client->__getLastRequest());
+
+        return $response;
     }
 }

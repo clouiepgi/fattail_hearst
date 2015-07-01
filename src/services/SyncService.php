@@ -11,9 +11,9 @@ namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Services\Client\EdgeClient;
 use CentralDesktop\FatTail\Services\Client\FatTailClient;
-use CentralDesktop\FatTail\Entities\CD_Account;
-use CentralDesktop\FatTail\Entities\CD_Milestone;
-use CentralDesktop\FatTail\Entities\CD_Workspace;
+use CentralDesktop\FatTail\Entities\Account;
+use CentralDesktop\FatTail\Entities\Milestone;
+use CentralDesktop\FatTail\Entities\Workspace;
 
 use League\Csv\Reader;
 use Psr\Log\LoggerAwareTrait;
@@ -29,10 +29,11 @@ class SyncService {
     private $DONE             = 'done';
     private $tmp_dir          = 'tmp/';
     private $workspace_template_hash = 'pm';
+    private $sales_role_hash = '';
 
-//    private $WORKSPACE_DYNAMIC_PROP_NAME = 'H_CD_Workspace_ID';
-//    private $MILESTONE_DYNAMIC_PROP_NAME = 'H_CD_Milestone_ID';
-    private $SALES_REP_ROLE = 'Salesrep';
+
+    private $WORKSPACE_DYNAMIC_PROP_NAME = 'H_CD_Workspace_ID';
+    private $MILESTONE_DYNAMIC_PROP_NAME = 'H_CD_Milestone_ID';
     private $USER_TO_ROLE_PATH_TEMPLATE = 'workspaces/%s/roles/%s/addUsers';
 
     public
@@ -40,12 +41,14 @@ class SyncService {
         EdgeClient $edge_client,
         FatTailClient $fattail_client,
         $tmp_dir = '',
-        $workspace_template_hash
+        $workspace_template_hash = 'pm',
+        $sales_role_hash = ''
     ) {
-        $this->edge_client    = $edge_client;
-        $this->fattail_client = $fattail_client;
-        $this->tmp_dir        = $tmp_dir;
+        $this->edge_client             = $edge_client;
+        $this->fattail_client          = $fattail_client;
+        $this->tmp_dir                 = $tmp_dir;
         $this->workspace_template_hash = $workspace_template_hash;
+        $this->sales_role_hash         = $sales_role_hash;
     }
 
     /**
@@ -214,7 +217,7 @@ class SyncService {
 
             $this->assign_user_to_role(
                 $full_name,
-                $this->SALES_REP_ROLE,
+                $this->sales_role_hash,
                 $cd_workspace->hash
             );
 
@@ -398,7 +401,7 @@ class SyncService {
      * @param $name The account name.
      * @param $custom_fields An array of custom fields.
      *
-     * @returns A new CD_Account
+     * @returns A new Account
      */
     private
     function create_cd_account($name, $custom_fields = []) {
@@ -414,7 +417,7 @@ class SyncService {
 
         $account_hash = $http_response->getContent();
 
-        $account = new CD_Account(
+        $account = new Account(
             $account_hash,
             $custom_fields['c_client_id']
         );
@@ -430,7 +433,7 @@ class SyncService {
      * @param $template_hash The hash of the workspace template.
      * @param $custom_fields The custom fields of the workspace.
      *
-     * @return A new CD_Workspace
+     * @return A new Workspace
      */
     private
     function create_cd_workspace(
@@ -451,7 +454,7 @@ class SyncService {
 
         $workspace_hash = $http_response->getContent();
 
-        $workspace = new CD_Workspace(
+        $workspace = new Workspace(
             $workspace_hash,
             $custom_fields['c_order_id']
         );
@@ -470,7 +473,7 @@ class SyncService {
      * @param $end_date The end date of the milestone.
      * @param $custom_fields An array of custom fields.
      *
-     * @return A new CD_Milestone.
+     * @return A new Milestone.
      */
     private
     function create_cd_milestone(
@@ -496,7 +499,7 @@ class SyncService {
 
         $milestone_hash = $http_response->getContent();
 
-        $milestone = new CD_Milestone(
+        $milestone = new Milestone(
             $milestone_hash,
             $custom_fields['c_drop_id']
         );
@@ -572,35 +575,6 @@ class SyncService {
     }
 
     /**
-     * Gets a role by name.
-     *
-     * @param $name The name of the role.
-     *
-     * @return The role id.
-     */
-    private
-    function get_cd_role_id_by_name($name)
-    {
-
-        $http_response = $this->edge_client->call(
-            EdgeClient::METHOD_GET,
-            'roles'
-        );
-
-        $roles = json_decode($http_response->getContent())->items;
-
-        $name_lower = strtolower($name);
-
-        foreach ($roles as $role) {
-            if (strtolower($role->details->title) === $name_lower) {
-                return $role->id;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Assigns a user based on their full name to
      * a role by its name.
      *
@@ -609,12 +583,10 @@ class SyncService {
      * @param $workspace_hash The workspace's hash.
      */
     private
-    function assign_user_to_role($full_name, $role_name, $workspace_hash) {
+    function assign_user_to_role($full_name, $role_hash, $workspace_hash) {
 
         // Search for the user by name
         $user_hash = $this->get_cd_user_id_by_name($full_name);
-
-        $role_hash = $this->get_cd_role_id_by_name($role_name);
 
         if ($user_hash == null) {
             $this->logger->warning('Failed to find Sales Rep user. ' .
@@ -717,7 +689,7 @@ class SyncService {
                 }
             }
 
-            $accounts[$account_data->id] = new CD_Account(
+            $accounts[$account_data->id] = new Account(
                 $account_data->id,
                 $c_client_id
             );
@@ -761,7 +733,7 @@ class SyncService {
                     }
                 }
 
-                $workspaces[$workspace_data->id] = new CD_Workspace(
+                $workspaces[$workspace_data->id] = new Workspace(
                     $workspace_data->id,
                     $c_order_id
                 );
@@ -775,7 +747,7 @@ class SyncService {
      * Gets all the cd milestones.
      *
      * @param $workspace_hash The CD workspace hash
-     * @return An array of CD_Milestones belonging to workspace
+     * @return An array of Milestones belonging to workspace
      */
     private
     function get_cd_milestones($workspace_hash) {
@@ -803,7 +775,7 @@ class SyncService {
                     }
                 }
 
-                $milestones[$milestone_data->id] = new CD_Milestone(
+                $milestones[$milestone_data->id] = new Milestone(
                     $milestone_data->id,
                     $c_drop_id
                 );
@@ -817,7 +789,7 @@ class SyncService {
      * Finds a single instance of a CD account by c_client_id.
      *
      * @param $c_client_id The FatTail client id
-     * @return CD_Account with $c_client_id or null if not found
+     * @return Account with $c_client_id or null if not found
      */
     private
     function find_account_by_c_client_id($c_client_id) {

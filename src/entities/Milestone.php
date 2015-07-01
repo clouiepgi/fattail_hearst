@@ -2,7 +2,7 @@
 
 namespace  CentralDesktop\FatTail\Entities;
 
-class CD_Milestone extends CD_Entity {
+class Milestone extends CD_Entity {
 
     public $c_drop_id = null;
     public $fattail_drop = null;

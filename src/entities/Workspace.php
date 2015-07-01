@@ -2,7 +2,7 @@
 
 namespace  CentralDesktop\FatTail\Entities;
 
-class CD_Workspace extends CD_Entity {
+class Workspace extends CD_Entity {
 
     public $c_order_id = null;
     public $milestones = [];

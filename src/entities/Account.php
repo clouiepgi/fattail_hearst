@@ -2,7 +2,7 @@
 
 namespace  CentralDesktop\FatTail\Entities;
 
-class CD_Account extends CD_Entity {
+class Account extends Entity {
 
     public $c_client_id = null;
     public $workspaces = [];

@@ -2,7 +2,7 @@
 
 namespace  CentralDesktop\FatTail\Entities;
 
-class CD_Entity {
+class Entity {
 
     public $hash = null;
 
