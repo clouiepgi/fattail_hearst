@@ -20,7 +20,8 @@
     "monolog/monolog":              "^1.13",
     "firebase/php-jwt":             "^2.1.0",
     "osucomm/ws-soap":              "^0.1.0",
-    "kriswallsmith/buzz":           "^0.15"
+    "kriswallsmith/buzz":           "^0.15",
+    "mtdowling/jmespath.php":           "^2.2.0"
   },
   "autoload": {
     "psr-4": {

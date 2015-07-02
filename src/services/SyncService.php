@@ -15,6 +15,7 @@ use CentralDesktop\FatTail\Entities\Account;
 use CentralDesktop\FatTail\Entities\Milestone;
 use CentralDesktop\FatTail\Entities\Workspace;
 
+use JmesPath;
 use League\Csv\Reader;
 use Psr\Log\LoggerAwareTrait;
 
@@ -24,6 +25,7 @@ class SyncService {
     protected $edge_client    = null;
     protected $fattail_client = null;
     protected $cache          = null;
+    protected $data_extractor = null;
 
     private $PING_INTERVAL    = 5; // In seconds
     private $DONE                    = 'done';
@@ -770,18 +772,21 @@ class SyncService {
             else {
                 break;
             }
+
             foreach ($data as $account_data) {
 
                 $c_client_id = null;
                 if (property_exists($account_data->details, 'customFields')) {
 
-                    $custom_fields = $account_data->details->customFields;
-                    foreach ($custom_fields as $field) {
-                        if ($field->fieldApiId === 'c_client_id') {
-                            // We only care about the client id
-                            $c_client_id = $field->value;
-                        }
-                    }
+                    $c_client_id = JmesPath\Env::search(
+                        "customFields[?fieldApiId=='c_client_id'].value | [0]",
+                        $account_data->details
+                    );
+                }
+
+                if (empty($c_client_id)) {
+                    // Skip any accounts that aren't relevant
+                    continue;
                 }
 
                 $accounts[$c_client_id] = new Account(
@@ -840,13 +845,15 @@ class SyncService {
                 $c_order_id = null;
                 if (property_exists($workspace_data->details, 'customFields')) {
 
-                    $custom_fields = $workspace_data->details->customFields;
-                    foreach ($custom_fields as $field) {
-                        if ($field->fieldApiId === 'c_order_id') {
-                            // We only care about the order id
-                            $c_order_id = $field->value;
-                        }
-                    }
+                    $c_order_id = JmesPath\Env::search(
+                        "customFields[?fieldApiId=='c_order_id'].value | [0]",
+                        $workspace_data->details
+                    );
+                }
+
+                if (empty($c_order_id)) {
+                    // Skip any workspaces that aren't relevant
+                    continue;
                 }
 
                 $workspaces[$c_order_id] = new Workspace(
@@ -900,13 +907,16 @@ class SyncService {
 
                 $c_drop_id = null;
                 if (property_exists($milestone_data->details, 'customFields')) {
-                    $custom_fields = $milestone_data->details->customFields;
-                    foreach ($custom_fields as $field) {
-                        if ($field->fieldApiId === 'c_drop_id') {
-                            // We only care about the drop id
-                            $c_drop_id = $field->value;
-                        }
-                    }
+
+                    $c_drop_id = JmesPath\Env::search(
+                        "customFields[?fieldApiId=='c_drop_id'].value | [0]",
+                        $milestone_data->details
+                    );
+                }
+
+                if (empty($c_drop_id)) {
+                    // Skip any milestones that aren't relevant
+                    continue;
                 }
 
                 $milestones[$c_drop_id] = new Milestone(
@@ -915,11 +925,14 @@ class SyncService {
                 );
             }
 
+            // For some reason the lastRecord
+            // field doesn't exists when lastRecord is empty
+            // unlike the other endpoints
             if (property_exists($json, 'lastRecord')) {
                 $last_record = $json->lastRecord;
             }
             else {
-                $last_record = '';
+                break;
             }
         } while($last_record !== '');
 
