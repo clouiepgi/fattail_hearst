@@ -489,7 +489,7 @@ class SyncService {
     ) {
         $details = new \stdClass();
         $details->workspaceName = $name;
-        $details->workspaceType = $template_hash; // TODO The real hash of the workspace template
+        $details->workspaceType = $template_hash;
 
         // Prepare data for request
         $path = 'accounts/' . $account_id . '/workspaces';
