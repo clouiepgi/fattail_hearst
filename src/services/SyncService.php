@@ -26,14 +26,15 @@ class SyncService {
     protected $cache          = null;
 
     private $PING_INTERVAL    = 5; // In seconds
-    private $DONE             = 'done';
-    private $tmp_dir          = 'tmp/';
+    private $DONE                    = 'done';
+    private $tmp_dir                 = 'tmp/';
     private $workspace_template_hash = 'pm';
-    private $sales_role_hash = '';
+    private $sales_role_hash         = '';
+    private $report_timeout          = 300;
 
     private $WORKSPACE_DYNAMIC_PROP_NAME = 'H_CD_Workspace_ID';
     private $MILESTONE_DYNAMIC_PROP_NAME = 'H_CD_Milestone_ID';
-    private $USER_TO_ROLE_PATH_TEMPLATE = 'workspaces/%s/roles/%s/addUsers';
+    private $USER_TO_ROLE_PATH_TEMPLATE  = 'workspaces/%s/roles/%s/addUsers';
 
     public
     function __construct(
@@ -42,7 +43,8 @@ class SyncService {
         SyncCache $cache,
         $tmp_dir = '',
         $workspace_template_hash = 'pm',
-        $sales_role_hash = ''
+        $sales_role_hash = '',
+        $report_timeout
     ) {
         $this->edge_client             = $edge_client;
         $this->fattail_client          = $fattail_client;
@@ -50,6 +52,7 @@ class SyncService {
         $this->tmp_dir                 = $tmp_dir;
         $this->workspace_template_hash = $workspace_template_hash;
         $this->sales_role_hash         = $sales_role_hash;
+        $this->report_timeout          = $report_timeout;
     }
 
     /**
@@ -342,6 +345,7 @@ class SyncService {
 
         // Ping report job until status is 'Done'
         $done = false;
+        $start = time();
         while(!$done) {
             sleep($this->PING_INTERVAL);
 
@@ -352,6 +356,15 @@ class SyncService {
 
             if (strtolower($report_job->Status) === $this->DONE) {
                 $done = true;
+            }
+
+            // Check if we hit our timeout limit
+            $elapsed = time() - $start;
+            if ($elapsed > $this->report_timeout) {
+                $this->logger->error(
+                    'Timed out waiting for FatTail report. Exiting.'
+                );
+                exit;
             }
         }
 
@@ -971,7 +984,13 @@ class SyncService {
      * @return The updated array of dynamic property values.
      */
     private
-    function update_fattail_dynamic_properties($properties, $id, $value) {
+    function update_fattail_dynamic_properties($properties = [], $id, $value) {
+
+        if (!is_array($properties)) {
+            // Sometimes giving a single object
+            // instead of an array
+            $properties = [$properties];
+        }
 
         $found = false;
         foreach ($properties as $property) {

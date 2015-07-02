@@ -26,7 +26,6 @@ class SyncCache {
      */
     public
     function set_users($users) {
-
         $this->users = $users;
     }
 
@@ -37,6 +36,7 @@ class SyncCache {
      */
     public
     function get_users() {
+
         return $this->users;
     }
 
