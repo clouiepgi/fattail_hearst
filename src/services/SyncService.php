@@ -23,14 +23,13 @@ class SyncService {
 
     protected $edge_client    = null;
     protected $fattail_client = null;
-    private $cd_accounts = [];
+    protected $cache          = null;
 
     private $PING_INTERVAL    = 5; // In seconds
     private $DONE             = 'done';
     private $tmp_dir          = 'tmp/';
     private $workspace_template_hash = 'pm';
     private $sales_role_hash = '';
-
 
     private $WORKSPACE_DYNAMIC_PROP_NAME = 'H_CD_Workspace_ID';
     private $MILESTONE_DYNAMIC_PROP_NAME = 'H_CD_Milestone_ID';
@@ -40,12 +39,14 @@ class SyncService {
     function __construct(
         EdgeClient $edge_client,
         FatTailClient $fattail_client,
+        SyncCache $cache,
         $tmp_dir = '',
         $workspace_template_hash = 'pm',
         $sales_role_hash = ''
     ) {
         $this->edge_client             = $edge_client;
         $this->fattail_client          = $fattail_client;
+        $this->cache                   = $cache;
         $this->tmp_dir                 = $tmp_dir;
         $this->workspace_template_hash = $workspace_template_hash;
         $this->sales_role_hash         = $sales_role_hash;
@@ -109,7 +110,7 @@ class SyncService {
         $this->logger->info("Preparing to sync data. Please wait.\n");
 
         // Populate a local copy of CD accounts, workspace, and milestones
-        $this->cd_accounts = array_map(function ($account) {
+        $this->cache->set_accounts(array_map(function ($account) {
 
             $account->set_workspaces(array_map(function ($workspace) {
 
@@ -121,7 +122,7 @@ class SyncService {
             }, $this->get_cd_workspaces($account->hash)));
 
             return $account;
-        }, $this->get_cd_accounts());
+        }, $this->get_cd_accounts()));
 
         // Iterate over CSV and process data
         // Skip the first and last rows since they
@@ -133,7 +134,6 @@ class SyncService {
 
             // Get client details
             $client_id = $row[$col_map['Client ID']];
-
             $client = $this->fattail_client->call(
                 'GetClient',
                 ['clientId' => $client_id]
@@ -154,7 +154,9 @@ class SyncService {
             )->GetDropResult;
 
             // Process the client
-            $cd_account = $this->cd_accounts[$client->ClientID];
+            $cd_account = $this->cache->find_account_by_c_client_id(
+                $client->ClientID
+            );
             if ($cd_account === null) {
                 // Create a new CD Account
                 $custom_fields = [
@@ -165,7 +167,7 @@ class SyncService {
                     $custom_fields
                 );
 
-                $this->cd_accounts[$cd_account->hash] = $cd_account;
+                $this->cache->add_account($cd_account);
             }
 
             if ($client->ExternalID === '') {
@@ -200,16 +202,29 @@ class SyncService {
                     $custom_fields
                 );
 
-                $cd_account->workspaces[$cd_workspace->hash] = $cd_workspace;
+                $cd_account->add_workspace($cd_workspace);
             }
 
-            // TODO Update dynamic field
+            if ($row[$col_map['(Campaign) CD Workspace ID']] === '') {
 
-            // TODO uncomment when live
-//            $this->fattail_client->call(
-//                'UpdateOrder',
-//                ['order' => $order]
-//            );
+                // Only need to update Order DynamicPropertyValue
+                // if it doesn't have one
+                $dynamic_properties = $order
+                    ->OrderDynamicProperties
+                    ->DynamicPropertyValue;
+                $order->OrderDynamicProperties->DynamicPropertyValue =
+                    $this->update_fattail_dynamic_properties(
+                        $dynamic_properties,
+                        $order_workspace_property_id,
+                        $cd_workspace->hash
+                    );
+
+                $this->fattail_client->call(
+                    'UpdateOrder',
+                    ['order' => $order]
+                );
+            }
+
 
             // Assign Salesrole
             // Splitting name, assuming only first and last name in
@@ -245,7 +260,7 @@ class SyncService {
                     $custom_fields
                 );
 
-                $cd_workspace->milestones[$cd_milestone->hash] = $cd_milestone;
+                $cd_workspace->add_milestone($cd_milestone);
             }
             else {
 
@@ -265,13 +280,25 @@ class SyncService {
                 }
             }
 
-            // TODO Update dynamic field
+            if ($row[$col_map['(Drop) CD Milestone ID']] === '') {
 
-            // TODO uncomment when live
-//            $this->fattail_client->call(
-//                'UpdateDrop',
-//                ['drop' => $drop]
-//            );
+                // Only need to update Drop DynamicPropertyValue
+                // if it doesn't have one
+                $dynamic_properties = $drop
+                    ->DropDynamicProperties
+                    ->DynamicPropertyValue;
+                $drop->DropDynamicProperties->DynamicPropertyValue =
+                    $this->update_fattail_dynamic_properties(
+                        $dynamic_properties,
+                        $drop_milestone_property_id,
+                        $cd_milestone->hash
+                    );
+
+                $this->fattail_client->call(
+                    'UpdateDrop',
+                    ['drop' => $drop]
+                );
+            }
         }
 
         $this->logger->info("Finished report sync.\n");
@@ -561,45 +588,53 @@ class SyncService {
     private
     function get_cd_user_id_by_name($full_name) {
 
-        $users = [];
-        $last_record = '';
-        $path         = 'users';
+        $users = $this->cache->get_users();
 
-        do {
+        if ($users === null) {
+            // Cache hasn't been set yet
 
-            $query_params = ['limit' => 100];
+            $last_record = '';
+            $path        = 'users';
+            $users       = [];
 
-            if ($last_record !== '') {
-                $query_params['lastRecord'] = $last_record;
-            }
-            $http_response = $this->edge_client->call(
-                EdgeClient::METHOD_GET,
-                $path,
-                $query_params
-            );
+            do {
 
-            $json = json_decode($http_response->getContent());
-            if (property_exists($json, 'items')) {
-                $users = array_merge(
-                    $users,
-                    $json->items);
-            }
-            else {
-                break;
-            }
+                $query_params = ['limit' => 100];
 
-            $last_record = $json->lastRecord;
-        } while ($last_record !== '');
+                if ($last_record !== '') {
+                    $query_params['lastRecord'] = $last_record;
+                }
+                $http_response = $this->edge_client->call(
+                    EdgeClient::METHOD_GET,
+                    $path,
+                    $query_params
+                );
+
+                $json = json_decode($http_response->getContent());
+                if (property_exists($json, 'items')) {
+                    foreach ($json->items as $user) {
+                        $name         = strtolower($user->details->fullName);
+                        $users[$name] = $user->id;
+                    }
+                }
+                else {
+                    break;
+                }
+
+                $last_record = $json->lastRecord;
+            } while ($last_record !== '');
+
+            $this->cache->set_users($users);
+        }
 
         $full_name_lower = strtolower($full_name);
 
-        $user = array_filter($users, function ($user) use ($full_name_lower) {
-            $user_full_name_lower = strtolower($user->details->fullName);
+        if (array_key_exists($full_name_lower, $users)) {
 
-            return $user_full_name_lower === $full_name_lower;
-        });
+            return $users[$full_name_lower];
+        }
 
-        return count($user) > 0 ? $user[0]->id : null;
+        return null;
     }
 
     /**
@@ -879,25 +914,6 @@ class SyncService {
     }
 
     /**
-     * Finds a single instance of a CD account by c_client_id.
-     *
-     * @param $c_client_id The FatTail client id
-     * @return Account with $c_client_id or null if not found
-     */
-    private
-    function find_account_by_c_client_id($c_client_id) {
-
-        foreach ($this->cd_accounts as $account) {
-
-            if ($account->c_client_id == $c_client_id) {
-                return $account;
-            }
-        }
-
-        return null;
-    }
-
-    /**
      * Finds and returns the id of the order dynamic property
      * in FatTail.
      *
@@ -943,5 +959,36 @@ class SyncService {
         }
 
         return null;
+    }
+
+    /**
+     * Updates or adds a DynamicPropertyValue to
+     * an array of DynamicPropertyValues.
+     *
+     * @param $properties An array of FatTail DynamicPropertyValues.
+     * @param $id The FatTail DynamicPropertyID.
+     * @param $value The FatTail property value.
+     * @return The updated array of dynamic property values.
+     */
+    private
+    function update_fattail_dynamic_properties($properties, $id, $value) {
+
+        $found = false;
+        foreach ($properties as $property) {
+            if ($property->DynamicPropertyID == $id) {
+                $property->Value = $value;
+                $found = true;
+            }
+        }
+
+        if (!$found) {
+
+            $property = new \stdClass();
+            $property->DynamicPropertyID = $id;
+            $property->Value = $value;
+            $properties[] = $property;
+        }
+
+        return $properties;
     }
 }
