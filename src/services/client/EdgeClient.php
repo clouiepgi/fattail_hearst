@@ -94,13 +94,7 @@ class EdgeClient {
 
         if (count($query_params) > 0) {
 
-            $query_string = '?';
-            foreach ($query_params as $key => $value) {
-                $query_string .= $key . '=' . $value . '&';
-            }
-            $query_string = trim($query_string, '&');
-
-            $full_path .= $query_string;
+            $full_path .= '?' . http_build_query($query_params);
         }
 
         return $full_path;

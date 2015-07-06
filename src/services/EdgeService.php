@@ -378,13 +378,13 @@ class EdgeService {
         $user_hash = $this->get_cd_user_id_by_name($full_name);
 
         if ($user_hash == null) {
-            $this->logger->warning('Failed to find Sales Rep user. ' .
-                'Continuing without assigning a user to Salesrep role.');
+            $this->logger->warning('Failed to find the specified user. ' .
+                'Continuing without assigning the user to the role.');
         }
         else if ($role_hash == null) {
             $this->logger->warning('Failed to find Central Desktop role.' .
-                'Make sure a \'Salesrep\' role exists. ' .
-                'Continuing without assigning a user to Salesrep role.');
+                'Make sure the specified role exists. ' .
+                'Continuing without assigning the user to the role.');
         }
         else {
 

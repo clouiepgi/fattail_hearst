@@ -9,6 +9,8 @@ use Symfony\Component\Console\Application;
 
 $container = new ContainerBuilder();
 $loader    = new YamlFileLoader($container, new FileLocator(__DIR__ . "/../config"));
+$loader->load('fattail_config.yml');
+$loader->load('cd_config.yml');
 $loader->load('config.yml');
 
 /** @var Application $app */

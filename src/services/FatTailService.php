@@ -4,6 +4,7 @@ namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Services\Client\FatTailClient;
 
+use JmesPath;
 use Psr\Log\LoggerAwareTrait;
 
 class FatTailService {
@@ -14,6 +15,33 @@ class FatTailService {
     public
     function __construct(FatTailClient $client) {
         $this->client = $client;
+    }
+
+    /**
+     * Gets the saved report information by
+     * saved report name.
+     *
+     * @param $name The name of the saved report.
+     * @return Saved report object
+     */
+    public
+    function get_saved_report_info_by_name($name) {
+
+        // Get all saved reports
+        $report_list_result = $this->get_saved_report_list();
+        $report_list        = $report_list_result
+                              ->GetSavedReportListResult
+                              ->SavedReport;
+
+        // Find the specific report
+        $report = null;
+        foreach ($report_list as $report_item) {
+            if ($report_item->Name === $name) {
+                $report = $report_item;
+            }
+        }
+
+        return $report;
     }
 
     /**
@@ -203,13 +231,12 @@ class FatTailService {
         $order_dynamic_properties_list = $this->client->call(
             'GetDynamicPropertiesListForOrder'
         )->GetDynamicPropertiesListForOrderResult;
-        foreach ($order_dynamic_properties_list->DynamicProperty as $prop) {
-            if ($prop->Name === $name) {
-                return $prop->DynamicPropertyID;
-            }
-        }
+        $dynamic_property_id = JmesPath\Env::search(
+            "DynamicProperty[?Name=='$name'].DynamicPropertyID | [0]",
+            $order_dynamic_properties_list
+        );
 
-        return null;
+        return $dynamic_property_id;
     }
 
 
@@ -228,13 +255,12 @@ class FatTailService {
         $drop_dynamic_properties_list = $this->client->call(
             'GetDynamicPropertiesListForDrop'
         )->GetDynamicPropertiesListForDropResult;
-        foreach ($drop_dynamic_properties_list->DynamicProperty as $prop) {
-            if ($prop->Name === $name) {
-                return $prop->DynamicPropertyID;
-            }
-        }
+        $dynamic_property_id = JmesPath\Env::search(
+            "DynamicProperty[?Name=='$name'].DynamicPropertyID | [0]",
+            $drop_dynamic_properties_list
+        );
 
-        return null;
+        return $dynamic_property_id;
     }
 
     /**
