@@ -1,31 +1,31 @@
 {
-  "name":     "centraldesktop/fattail",
-  "authors":  [
-    {
-      "name":  "Trey Hyde",
-      "email": "Trey.Hyde@pgi.com"
-    }
-  ],
+    "name": "centraldesktop/fattail",
+    "authors": [
+        {
+            "name": "Trey Hyde",
+            "email": "Trey.Hyde@pgi.com"
+        }
+    ],
   "bin":      [
     "bin/run.php"
   ],
-  "require":  {
-    "php":                          ">=5.5.0",
-    "ext-mbstring":                 "*",
-    "symfony/console":              "^2.7",
-    "symfony/dependency-injection": "^2.7",
-    "symfony/config":               "^2.7",
-    "symfony/yaml":                 "^2.7",
+    "require": {
+        "php"                                     : ">=5.5.0",
+        "ext-mbstring": "*",
+        "symfony/console": "^2.7",
+        "symfony/dependency-injection": "^2.7",
+        "symfony/config": "^2.7",
+        "symfony/yaml": "^2.7",
     "league/csv":                   "^7.1",
     "monolog/monolog":              "^1.13",
     "firebase/php-jwt":             "^2.1.0",
     "osucomm/ws-soap":              "^0.1.0",
     "kriswallsmith/buzz":           "^0.15",
     "mtdowling/jmespath.php":           "^2.2.0"
-  },
-  "autoload": {
+    },
+    "autoload": {
     "psr-4": {
       "CentralDesktop\\FatTail\\": "src/"
     }
-  }
+    }
 }
