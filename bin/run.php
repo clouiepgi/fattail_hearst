@@ -12,6 +12,7 @@ $loader    = new YamlFileLoader($container, new FileLocator(__DIR__ . "/../confi
 $loader->load('fattail_config.yml');
 $loader->load('cd_config.yml');
 $loader->load('config.yml');
+$loader->load('field_mappings.yml');
 
 /** @var Application $app */
 $app = $container->get('console.application');
