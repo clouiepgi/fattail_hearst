@@ -27,7 +27,6 @@ class EdgeClient {
     public
     function __construct(
         EdgeAuth $edge_auth,
-        //\GuzzleHttp\Client $http_client,
         \Buzz\Browser $http_client,
         $base_url
     ) {
@@ -76,6 +75,18 @@ class EdgeClient {
                 break;
             default:
                 $http_response = $this->http_client->get($url, $headers);
+        }
+
+        if (
+            $http_response->getStatusCode() === 401 &&
+            $http_response->getContent() == 'Access token has expired'
+        ) {
+
+            // If the access token has expired, get a new one and try again
+            $this->logger->info('Access token has expired, attempting to get a new one.');
+            $this->access_token = $this->auth_client->get_access_token();
+
+            $http_response = $this->call($method, $path, $query_params, $content_array);
         }
 
         return $http_response;

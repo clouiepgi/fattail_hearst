@@ -13,7 +13,7 @@ parameters:
   auth.cd.scp: cd.user
   auth.cd.grant_type: urn:ietf:params:oauth:grant-type:jwt-bearer
 
-  edge.base_url: https://edge.centraldesktop.com/
+  edge.base_url: https://edge.centraldesktop.com/v1/
 
   tmp_dir: tmp/
 
@@ -51,10 +51,18 @@ services:
 
     http.client:
       class: Buzz\Browser
+      calls:
+        - [setClient, [@file_get_contents]]
+
+    file_get_contents:
+      class: Buzz\Client\FileGetContents
+      calls:
+        - [setVerifyPeer, [false]]
+        - [setTimeout, [300]]
 
     soap.client:
       class: WsSoap\Client
-      arguments: [%fattail.base_url%, { wsUsername: %fattail.username%, wsPassword: %fattail.password% }]
+      arguments: [%fattail.base_url%, { wsUsername: %fattail.username%, wsPassword: %fattail.password%, keep_alive: false, exceptions: true }]
 
     soap.fattail.api_version_header:
       class: SoapHeader
@@ -80,7 +88,7 @@ services:
 
     sync_service:
       class: CentralDesktop\FatTail\Services\SyncService
-      arguments: ["@edge_service", "@fattail_service", "@sync_cache", %tmp_dir%, %cd.workspace_template_hash%, %cd.sales_role_hash%, %fattail.report_timeout%]
+      arguments: ["@edge_service", "@fattail_service", "@sync_cache", %tmp_dir%, %cd.workspace_template_hash%, %cd.roles%, %fattail.report_timeout%, %fattail.report_span%, %tasklist_templates%, %fattail.overwrite%]
       calls:
         - [setLogger, ["@logger.default"]]
 

@@ -4,9 +4,12 @@ namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
 use CentralDesktop\FatTail\Entities\Milestone;
+use CentralDesktop\FatTail\Entities\Tasklist;
+use CentralDesktop\FatTail\Entities\TasklistTemplate;
 use CentralDesktop\FatTail\Entities\Workspace;
 use CentralDesktop\FatTail\Services\Client\EdgeClient;
 
+use DateTime;
 use JmesPath;
 use Psr\Log\LoggerAwareTrait;
 
@@ -197,6 +200,7 @@ class EdgeService {
             $http_response = $this->cd_get($path, $query_params);
 
             $json = json_decode($http_response->getContent());
+
             if (property_exists($json, 'items')) {
                 $data = $json->items;
             }
@@ -343,10 +347,16 @@ class EdgeService {
                     continue;
                 }
 
-                $milestones[$c_drop_id] = new Milestone(
+                $milestone = new Milestone(
                     $milestone_data->id,
                     $c_drop_id
                 );
+
+                // Get the tasklists for the milestone
+                $milestone->set_tasklists($this->get_cd_tasklists($milestone));
+
+                $milestones[$c_drop_id] = $milestone;
+
             }
 
             // For some reason the lastRecord
@@ -364,27 +374,80 @@ class EdgeService {
     }
 
     /**
+     * The gets an array of tasklists belonging to a milestone.
+     *
+     * @param $milestone The milestone of the tasklists being queried.
+     * @return array An array of Tasklists
+     */
+    public
+    function get_cd_tasklists($milestone) {
+
+        $tasklists   = [];
+        $last_record = '';
+        $path        = 'milestones/' . $milestone->hash . '/tasklists';
+
+        do {
+
+            $query_params = ['limit' => 100];
+
+            if (!empty($last_record)) {
+                $query_params['lastRecord'] = $last_record;
+            }
+
+            $http_response = $this->cd_get($path, $query_params);
+
+            $json = json_decode($http_response->getContent());
+
+            if (!property_exists($json, 'items')) {
+
+                // No more items to process so exit
+                break;
+            }
+
+            foreach ($json->items as $tasklist_data) {
+
+                $tasklist = new Tasklist(
+                    $tasklist_data->id,
+                    $tasklist_data->details->tasklistName
+                );
+
+                $tasklists[$tasklist->name] = $tasklist;
+            }
+
+            if (property_exists($json, 'lastRecord') && !empty($json->lastRecord)) {
+                $last_record = $json->lastRecord;
+            }
+            else {
+                $last_record = '';
+            }
+        } while (!empty($last_record));
+
+        return $tasklists;
+    }
+
+    /**
      * Assigns a user based on their full name to
      * a role by its name.
      *
      * @param $full_name The user's full name.
      * @param $role_hash The role's hash.
      * @param $workspace_hash The workspace's hash.
+     * @param $role_name THe role's name.
      */
     public
-    function assign_user_to_role($full_name, $role_hash, $workspace_hash) {
+    function assign_user_to_role($full_name, $role_hash, $workspace_hash, $role_name) {
 
         // Search for the user by name
         $user_hash = $this->get_cd_user_id_by_name($full_name);
 
         if ($user_hash == null) {
-            $this->logger->warning('Failed to find the specified user. ' .
-                'Continuing without assigning the user to the role.');
+            $this->logger->warning('Failed to find user ' . $full_name . ' in Central Desktop. ' .
+                'Continuing without assigning the user ' . $full_name . ' to the ' . $role_name . ' role.');
         }
         else if ($role_hash == null) {
-            $this->logger->warning('Failed to find Central Desktop role.' .
-                'Make sure the specified role exists. ' .
-                'Continuing without assigning the user to the role.');
+            $this->logger->warning('Failed to find role ' . $role_name . ' in Central Desktop. ' .
+                'Make sure the ' . $role_name . ' role exists in Central Desktop. ' .
+                'Continuing without assigning the user ' . $full_name . 'to the ' . $role_name . ' role.');
         }
         else {
 
@@ -404,6 +467,115 @@ class EdgeService {
                 $body
             );
         }
+    }
+
+    /**
+     * Adds tasklists to a milestone using an array of tasklist hashes.
+     *
+     * @param $milestone_hash The milestone to add tasklists to.
+     * @param $tasklist_template_hashes An array of tasklist template hashes to use.
+     * @param $start_date The start date for the tasklist
+     */
+    public
+    function add_tasklists_to_milestone($milestone, $tasklist_template_names, $start_date) {
+
+        $post_path = 'milestones/' . $milestone->hash . '/tasklists';
+        foreach ($tasklist_template_names as $tasklist_template_name) {
+
+            // Tasklist templates have names like
+            // "DropTypes_TasklistName" so take out the "DropTypes_"
+            $tasklist_name = $tasklist_template_name;
+            if (($name = strrchr($tasklist_template_name, '_')) !== false) {
+                $tasklist_name = substr($name, 1);
+            }
+
+            if (!$milestone->has_tasklist($tasklist_name)) {
+
+                // Get the name of the tasklist template to reuse
+                // as name of the template
+                $template = $this->cache->get_tasklist_template($tasklist_template_name);
+
+                // Client wants tasklist start dates to be -30 days of drop start date
+                $start_date = new DateTime($start_date);
+
+                $start_date->modify('-30 days');
+
+                if ($template !== null) {
+
+                    $body = new \stdClass();
+                    $body->tasklistName     = $tasklist_name;
+                    $body->startDate        = $start_date->format('Y-m-d');
+                    $body->tasklistTemplate = $template->hash;
+
+                    $tasklist_hash = $this->cd_post(
+                        $post_path,
+                        $body
+                    );
+
+                    $milestone->add_tasklist(
+                        new Tasklist($tasklist_hash, $tasklist_template_name)
+                    );
+                }
+                else {
+                    $this->logger->warn(
+                        'Failed to find tasklist template',
+                        [
+                            'Name'           => $tasklist_template_name,
+                            'Milestone Hash' => $milestone->hash
+                        ]
+                    );
+                }
+            }
+        }
+    }
+
+    /**
+     * Gets all CD tasklist templates for lookup of hashes.
+     *
+     * @return array A hash of tasklist templates hashed by their name.
+     */
+    public
+    function get_cd_tasklist_templates() {
+
+        $templates   = [];
+        $last_record = '';
+        $path        = 'tasklists';
+
+        do {
+
+            $query_params = ['templateOnly' => true, 'limit' => 100];
+
+            if (!empty($last_record)) {
+
+                // Add last record for pagination
+                $query_params['lastRecord'] = $last_record;
+            }
+
+            $http_response = $this->cd_get($path, $query_params);
+            $json = json_decode($http_response->getContent());
+
+            if (!property_exists($json, 'items')) {
+
+                // No more items to process
+                break;
+            }
+
+            foreach ($json->items as $template_data) {
+
+                // Hash them by their name for easy lookup
+                $tasklist_template = new TasklistTemplate($template_data->id);
+                $templates[$template_data->details->tasklistName] = $tasklist_template;
+            }
+
+            if (property_exists($json, 'lastRecord') && !empty($json->lastRecord)) {
+                $last_record = $json->lastRecord;
+            }
+            else {
+                $last_record = '';
+            }
+        } while (!empty($last_record));
+
+        return $templates;
     }
 
     /**

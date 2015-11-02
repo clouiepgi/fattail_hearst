@@ -32,15 +32,34 @@ class FatTailClient {
         try {
             $response = $this->soap_client->$name($params);
         }
+        catch (\SoapFault $e) {
+            $this->logger->error(
+                'Failed to make a SOAP call to FatTail.',
+                [
+                    'Code'    => $e->faultcode,
+                    'Message' => $e->faultstring,
+                    'Detail'  => $e->detail,
+                    'Params'  => $params
+                ]
+            );
+            print_r($this->soap_client->__getLastRequest());
+
+            // Pass exception up
+            throw $e;
+        }
         catch (\Exception $e) {
 
             $this->logger->error(
-                'Failed to make a SOAP call to FatTail. Exiting.'
+                'Failed to make a SOAP call to FatTail.',
+                [
+                    'Exception' => $e->getMessage()
+                ]
             );
             print_r($this->soap_client->__getLastRequest());
-            exit;
+
+            // Pass exception up
+            throw $e;
         }
-        print_r($this->soap_client->__getLastRequest());
 
         return $response;
     }
