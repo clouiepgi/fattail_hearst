@@ -117,10 +117,11 @@ class SyncService {
         for ($i = 1, $len = count($rows); $i < $len; $i++) {
 
             $row = $rows[$i];
+
             if (
                 strpos($row[$col_map['Position Path']], 'HDM') === false ||
                 strtolower($row[$col_map['(Drop) Custom Unit']]) != "true" ||
-                strtotime($row['Last Changed On']) < strtotime('-3 days')
+                strtotime($row[$col_map['Last Changed On']]) < strtotime('-3 days')
             ) {
 
                 // Skip Non HDM items, custom, and any items not updated in the past

@@ -324,7 +324,7 @@ class EdgeService {
             $http_response = $this->cd_get($path, $query_params);
 
             $json = json_decode($http_response->getContent());
-            if (property_exists($json, 'items')) {
+            if ($json && property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
