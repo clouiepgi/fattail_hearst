@@ -210,9 +210,18 @@ class FatTailService {
     public
     function update_drop($drop) {
 
+        if (property_exists($drop, 'ParentDropID')) {
+            $method     = 'UpdatePackageComponentDrops';
+            $parameters = ['componentDrops' => [$drop]];
+        }
+        else {
+            $method     = 'UpdateDrop';
+            $parameters = ['drop' => $drop];
+        }
+
         return $this->client->call(
-            'UpdateDrop',
-            ['drop' => $drop]
+            $method,
+            $parameters
         );
     }
 

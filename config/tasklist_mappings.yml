@@ -1,0 +1,49 @@
+parameters:
+  tasklist_templates:
+    # Tasklist templates names are expected to be in the format "DropTypes_TasklistName"
+    # where DropTypes can be anything and TasklistName is the name of the tasklist that
+    # will be created from the template
+    Billboard:
+      - Billboard
+    Billboard Tandem:
+      - Billboard
+    Blogger Activation:
+      - Blogger Activation
+    Dedicated Email:
+      - Dedicated Email
+    Marquee:
+      - Marquee
+    Portrait:
+      - Portrait
+    Rectangle:
+      - Rectangle
+    CoBrand:
+      - CoBrand
+    Content:
+      - Content
+    Contest:
+      - Contest
+    Hero:
+      - Hero
+    Social:
+      - Social
+    Sweepstakes:
+      - Sweepstakes
+    Video Interstitial:
+      - Interstitial
+    Leaderboard:
+      - Leaderboard
+    Interstitial:
+      - Mobile Video Interstitial
+    Snapchat:
+      - Snapchat
+    Video:
+      - Video
+    Hero Tandem:
+      - Hero
+    Colaboration Board:
+      -Collaboration
+    Native In-Stream Tout:
+      - Native In-Stream Tout
+    Sponsored Post:
+      - Sponsored Post

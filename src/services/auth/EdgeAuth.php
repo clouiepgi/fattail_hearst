@@ -46,11 +46,15 @@ class EdgeAuth {
      */
     public
     function get_access_token() {
+
+        // Subtract a minute because
+        // sometimes the server complains about
+        // using a future time.
         $user = [
             "iss" => $this->client_id,
             "aud" => $this->issuer,
-            "exp" => time() + 600000,
-            "iat" => time(),
+            "exp" => strtotime("-1 minutes") + 600000,
+            "iat" => strtotime("-1 minutes"),
             "scp" => $this->scp
         ];
 
@@ -64,6 +68,7 @@ class EdgeAuth {
         ];
 
         try {
+
             $http_response = $this->client->post(
                 $this->auth_url,
                 ['Content-Type' => 'application/json'],
@@ -73,14 +78,6 @@ class EdgeAuth {
             $json_response = json_decode($http_response->getContent());
 
             $access_token = $json_response->access_token;
-        }
-        catch (\GuzzleHttp\Exception\RequestException $e) {
-            $this->logger->error('Bad http authentication request made.');
-            if ($e->getResponse()) {
-                $this->logger->error($e->getResponse());
-            }
-            $this->logger->error('Exiting.');
-            exit;
         }
         catch (\Exception $e) {
             $this->logger->error('Bad http authentication request made.');
