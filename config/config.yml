@@ -17,12 +17,12 @@ parameters:
 
   logger.level: %logger.level.info%
 
-  auth.cd.auth_url: https://oidc.centraldesktop.com/oauth2/token
-  auth.cd.issuer: oidc.centraldesktop.com
+  auth.cd.auth_url: https://oidc.imeetcentral.com/oauth2/token
+  auth.cd.issuer: oidc.imeetcentral.com
   auth.cd.scp: cd.user
   auth.cd.grant_type: urn:ietf:params:oauth:grant-type:jwt-bearer
 
-  edge.base_url: https://edge.centraldesktop.com/v1/
+  edge.base_url: https://edge.imeetcentral.com/v1/
 
   tmp_dir: tmp/
 
