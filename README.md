@@ -1,5 +1,5 @@
 
-Central Desktop / FatTail AdBook Integration
+iMeet® Central / FatTail AdBook Integration
 ============================================
 
 About
@@ -7,23 +7,23 @@ About
 
 This integration starts by executing a FatTail saved report.
 For each record:
-1) A Central Desktop Account will be created for each FatTail Client
-1) A Central Desktop Workspace will be created for each FatTail Order
-1) A Central Desktop Milestone will be created for each FatTail Drop
+1) A iMeet® Central Account will be created for each FatTail Client
+1) A iMeet® Central Workspace will be created for each FatTail Order
+1) A iMeet® Central Milestone will be created for each FatTail Drop
 
-References to the FatTail object will be retailed in Central Desktop and references to Central Desktop objects
+References to the FatTail object will be retailed in iMeet® Central and references to iMeet® Central objects
 will be stored in FatTail to minimize duplication.
 
 
 Prerequisites
 -------------
 
-This integration requires that the "Account View" feature is enabled on your Central Desktop account.
+This integration requires that the "Account View" feature is enabled on your iMeet® Central account.
  Please contact support@centraldesktop.com for more information on this topic.
 
 ### Custom Fields
 
-You will need to create the following customer fields in the Central Desktop interface before continuing.
+You will need to create the following customer fields in the iMeet® Central interface before continuing.
 
 Account:
 1. c_client_id
@@ -84,7 +84,7 @@ Select a user that has the appropriate permissions to create accounts and worksp
 user specifically for this purpose.
 
 After clicking on "Create new Client ID," your browser will download a file with the necessary information to create a
-trust relationship between this application and Central Desktop.
+trust relationship between this application and iMeet® Central.
 
 The client_id and the private_key that are required in cd.config.yml are found in this json file.
 
