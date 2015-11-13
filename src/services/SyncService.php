@@ -83,7 +83,7 @@ class SyncService {
             $this->tmp_dir,
             $start_date,
             $end_date
-        );
+        );exit;
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
@@ -120,12 +120,10 @@ class SyncService {
 
             if (
                 strpos($row[$col_map['Position Path']], 'HDM') === false ||
-                strtolower($row[$col_map['(Drop) Custom Unit']]) != "true" ||
-                strtotime($row[$col_map['Last Changed On']]) < strtotime('-3 days')
+                strtolower($row[$col_map['(Drop) Custom Unit']]) != "true"
             ) {
 
-                // Skip Non HDM items, custom, and any items not updated in the past
-                // 3 days
+                // Skip Non HDM items and custom
                 continue;
             }
 
