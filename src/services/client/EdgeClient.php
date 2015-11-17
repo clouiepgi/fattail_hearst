@@ -1,6 +1,6 @@
 <?php
 /**
- * CentralDesktop Edge Client for calling Edge API endpoints.
+ * iMeet® Central Edge Client for calling Edge API endpoints.
  *
  * User: clouie
  * Date: 6/17/15

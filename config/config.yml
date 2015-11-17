@@ -2,6 +2,15 @@ parameters:
 
   # NO NEED TO MODIFY ANYTHING BELOW THIS LINE
   # Configure settings in fattail_config.yml and cd_config.yml
+
+
+
+
+
+
+
+
+
   logger.level.debug: 100
   logger.level.info: 200
   logger.level.warn: 300

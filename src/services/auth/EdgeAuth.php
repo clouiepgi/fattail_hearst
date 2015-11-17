@@ -1,6 +1,6 @@
 <?php
 /**
- * CentralDesktop Edge Authentication
+ * iMeet® Central Edge Authentication
  * User: clouie
  * Date: 6/16/15
  * Time: 4:30 PM
