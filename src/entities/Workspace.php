@@ -5,12 +5,15 @@ namespace  CentralDesktop\FatTail\Entities;
 class Workspace extends Entity {
 
     public $c_order_id = null;
+    public $name = null;
     private $milestones = [];
 
 
-    function __construct($hash, $c_order_id) {
+    function __construct($hash, $name, $c_order_id) {
         parent::__construct($hash);
         $this->hash = $hash;
+        $this->name = $name;
+
         $this->c_order_id = $c_order_id;
     }
 

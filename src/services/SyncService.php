@@ -19,6 +19,7 @@ class SyncService {
     protected $edge_service    = null;
     protected $fattail_service = null;
     protected $cache           = null;
+    protected $diff_service    = null;
     protected $data_extractor  = null;
 
     private $PING_INTERVAL               = 5; // In seconds
@@ -39,6 +40,7 @@ class SyncService {
         EdgeService $edge_service,
         FatTailService $fattail_service,
         SyncCache $cache,
+        DiffService $diff_service,
         $tmp_dir = '',
         $workspace_template_hash = 'pm',
         $roles = [],
@@ -50,6 +52,7 @@ class SyncService {
         $this->edge_service             = $edge_service;
         $this->fattail_service          = $fattail_service;
         $this->cache                    = $cache;
+        $this->diff_service             = $diff_service;
         $this->tmp_dir                  = $tmp_dir;
         $this->workspace_template_hash  = $workspace_template_hash;
         $this->roles                    = $roles;
@@ -119,6 +122,7 @@ class SyncService {
             $row = $rows[$i];
 
             if (
+                count($row) === 1 || // Empty rows
                 strpos($row[$col_map['Position Path']], 'HDM') === false ||
                 strtolower($row[$col_map['(Drop) Custom Unit']]) != "true"
             ) {
@@ -148,7 +152,6 @@ class SyncService {
 
             // Process the client
             try {
-
                 $cd_account = $this->sync_client($client);
             }
             catch (\Exception $e) {
@@ -161,7 +164,7 @@ class SyncService {
                 continue;
             }
 
-            // Process the order
+
             $order_data = [
                 'campaign_name'         => $row[$col_map['Campaign Name']],
                 'c_campaign_status'     => $row[$col_map['IO Status']],
@@ -172,8 +175,9 @@ class SyncService {
                 'hdm_pm'                => $row[$col_map['HDM | Project Manager']]
             ];
 
+            // Process the order
+            // Sync the order if it's new or changed
             try {
-
                 $cd_workspace = $this->sync_order(
                     $order,
                     $cd_account,
@@ -191,12 +195,6 @@ class SyncService {
                 continue;
             }
 
-            // Process the drop
-
-            $package_drop_id = $row[$col_map['Package Drop ID']];
-            if (!empty($package_drop_id)) {
-                $drop->ParentDropID = $package_drop_id;
-            }
             $milestone_data = [
                 'name'                   => $row[$col_map['Position Path']],
                 'description'            => $row[$col_map['Drop Description']],
@@ -208,6 +206,11 @@ class SyncService {
                 'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']]
             ];
 
+            // Process the drop
+            $package_drop_id = $row[$col_map['Package Drop ID']];
+            if (!empty($package_drop_id)) {
+                $drop->ParentDropID = $package_drop_id;
+            }
             try {
 
                 $cd_milestone = $this->sync_drop(
@@ -367,24 +370,8 @@ class SyncService {
     private
     function prepare_cache() {
 
-        // Populate a local copy of CD accounts, workspace, and milestones
-        $this->cache->set_accounts(array_map(function ($account) {
-
-            $account->set_workspaces(array_map(function ($workspace) {
-
-                $workspace->set_milestones(
-                    $this->edge_service->get_cd_milestones($workspace->hash)
-                );
-
-                return $workspace;
-            }, $this->edge_service->get_cd_workspaces($account->hash)));
-
-            return $account;
-        }, $this->edge_service->get_cd_accounts()));
-
-        $this->cache->set_tasklist_templates(
-            $this->edge_service->get_cd_tasklist_templates()
-        );
+        // Populate local copy of all workspace in case a search is needed
+        $this->cache->set_workspaces($this->edge_service->get_cd_workspaces());
     }
 
     /**
@@ -397,10 +384,23 @@ class SyncService {
     function sync_client($client) {
 
         // Process the client
+
+        // Check if exists in cache
         $cd_account = $this->cache->find_account_by_c_client_id(
             $client->ClientID
         );
+
         if ($cd_account === null) {
+            // See if account exists in cd
+            $cd_account = $this->edge_service->get_cd_account($client->ExternalID);
+
+            if ($cd_account !== null) {
+                $this->cache->add_account($cd_account);
+            }
+        }
+
+        if ($cd_account === null) {
+
             // Create a new CD Account
             $custom_fields = [
                 'c_client_id' => $client->ClientID
@@ -413,14 +413,16 @@ class SyncService {
             $this->cache->add_account($cd_account);
         }
 
-        if ($this->fattail_overwrite || $client->ExternalID === '') {
+        if (
+            $this->fattail_overwrite ||
+            !$this->is_valid_hash($client->ExternalID)
+        ) {
             // Update the FatTail client external id
             // if it doesn't have a value
             $client->ExternalID = $cd_account->hash;
 
             // Update the FatTail Client with the
             // CD Account hash
-
             $this->fattail_service->update_client($client);
         }
 
@@ -445,21 +447,41 @@ class SyncService {
         $order_workspace_property_id
     ) {
 
+        // Get the name from the campaign name
+        $name_parts = explode('|', $order_data['campaign_name']);
+        $name = trim($name_parts[count($name_parts) - 1]);
+
         $cd_workspace = $cd_account->find_workspace_by_c_order_id(
             $order->OrderID
         );
+
+        if ($cd_workspace === null) {
+            $cd_workspace = $this->cache->get_workspace_hash_by_name($name);
+
+            if ($cd_workspace !== null) {
+                $cd_account->add_workspace($cd_workspace);
+            }
+        }
+
+        if ($cd_workspace === null) {
+            // See if workspace exists in cd
+            $cd_workspace = $this->edge_service->get_cd_workspace($order_data['workspace_id']);
+
+            if ($cd_workspace !== null) {
+                $cd_account->add_workspace($cd_workspace);
+            }
+        }
+
+        $custom_fields = [
+            'c_order_id'            => $order->OrderID,
+            'c_campaign_status'     => $order_data['c_campaign_status'],
+            'c_campaign_start_date' => $order_data['c_campaign_start_date'],
+            'c_campaign_end_date'   => $order_data['c_campaign_end_date']
+        ];
+
         if ($cd_workspace === null) {
 
-            // Get the name from the campaign name
-            $name_parts = explode('|', $order_data['campaign_name']);
-            $name = trim($name_parts[count($name_parts) - 1]);
-
-            $custom_fields = [
-                'c_order_id'            => $order->OrderID,
-                'c_campaign_status'     => $order_data['c_campaign_status'],
-                'c_campaign_start_date' => $order_data['c_campaign_start_date'],
-                'c_campaign_end_date'   => $order_data['c_campaign_end_date']
-            ];
+            // Create a new workspace if it doesn't exist
             $cd_workspace = $this->edge_service->create_cd_workspace(
                 $cd_account->hash,
                 $name,
@@ -469,8 +491,26 @@ class SyncService {
 
             $cd_account->add_workspace($cd_workspace);
         }
+        else {
 
-        if ($this->fattail_overwrite || $order_data['workspace_id'] === '') {
+            // Update the workspace if it exists
+            $status = $this->edge_service->update_cd_workspace(
+                $cd_workspace->hash,
+                $name,
+                $custom_fields
+            );
+
+            if (!$status) {
+                $this->logger->warning(
+                    "Failed to updated a workspace. Continuing."
+                );
+            }
+        }
+
+        if (
+            $this->fattail_overwrite ||
+            !$this->is_valid_hash($order_data['workspace_id'])
+        ) {
 
             // Only need to update Order DynamicPropertyValue
             // if it doesn't have one
@@ -531,6 +571,16 @@ class SyncService {
         $cd_milestone = $cd_workspace->find_milestone_by_c_drop_id(
             $drop->DropID
         );
+
+        if ($cd_milestone === null) {
+            // See if drop exists in cd
+            $this->edge_service->get_cd_milestone($drop_data['milestone_id']);
+
+            if ($cd_milestone !== null) {
+                $cd_workspace->add_milestone($cd_milestone);
+            }
+        }
+
         $custom_fields = [
             'c_drop_id'              => $drop->DropID,
             'c_custom_unit_features' => $drop_data['c_custom_unit_features'],
@@ -577,7 +627,10 @@ class SyncService {
         $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
             $this->tasklist_templates[$drop_type] : [];
 
-        if ($this->fattail_overwrite || ['milestone_id'] === '') {
+        if (
+            $this->fattail_overwrite ||
+            !$this->is_valid_hash($drop_data['milestone_id'])
+        ) {
 
             // Only need to update Drop DynamicPropertyValue
             // if it doesn't have one
@@ -624,5 +677,21 @@ class SyncService {
         $name_parts = explode(', ', $name);
 
         return strtolower($name_parts[1] . ' ' . $name_parts[0]);
+    }
+
+    /**
+     * Check if a hash string is valid.
+     *
+     * @param $hash
+     * @return bool
+     */
+    private
+    function is_valid_hash($hash) {
+
+        if (empty($hash)) {
+            return false;
+        }
+
+        return !preg_match('/[^a-z0-9]/i', $hash);
     }
 }

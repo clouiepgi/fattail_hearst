@@ -25,6 +25,8 @@ parameters:
   edge.base_url: https://edge.imeetcentral.com/v1/
 
   tmp_dir: tmp/
+  data_dir: data/
+  diff_file: diff.txt
 
 services:
     logger.processor.proc:
@@ -97,7 +99,7 @@ services:
 
     sync_service:
       class: CentralDesktop\FatTail\Services\SyncService
-      arguments: ["@edge_service", "@fattail_service", "@sync_cache", %tmp_dir%, %cd.workspace_template_hash%, %cd.roles%, %fattail.report_timeout%, %fattail.report_span%, %tasklist_templates%, %fattail.overwrite%]
+      arguments: ["@edge_service", "@fattail_service", "@sync_cache", "@diff_service", %tmp_dir%, %cd.workspace_template_hash%, %cd.roles%, %fattail.report_timeout%, %fattail.report_span%, %tasklist_templates%, %fattail.overwrite%]
       calls:
         - [setLogger, ["@logger.default"]]
 
@@ -115,3 +117,7 @@ services:
 
     sync_cache:
       class: CentralDesktop\FatTail\Services\SyncCache
+
+    diff_service:
+      class: CentralDesktop\FatTail\Services\DiffService
+      arguments: [%data_dir%, %diff_file%]

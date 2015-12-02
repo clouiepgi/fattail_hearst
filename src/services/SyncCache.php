@@ -6,8 +6,9 @@ use CentralDesktop\FatTail\Entities\Account;
 
 class SyncCache {
 
-    private $accounts           = null;
-    private $users              = null;
+    private $accounts           = [];
+    private $workspaces         = [];
+    private $users              = [];
     private $tasklist_templates = [];
 
     /**
@@ -92,6 +93,34 @@ class SyncCache {
 
         if (isset($this->tasklist_templates[$name])) {
             return $this->tasklist_templates[$name];
+        }
+
+        return null;
+    }
+
+    /**
+     * Sets the cache workspaces.
+     *
+     * @param $workspaces
+     */
+    public
+    function set_workspaces($workspaces) {
+        $this->workspaces = $workspaces;
+    }
+
+    /**
+     * Finds a workspace by its name.
+     *
+     * @param $name
+     * @return $hash|null
+     */
+    public
+    function get_workspace_hash_by_name($name) {
+
+        foreach ($this->workspaces as $workspace) {
+            if ($workspace->name === $name) {
+                return $workspace;
+            }
         }
 
         return null;

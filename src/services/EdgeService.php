@@ -95,6 +95,30 @@ class EdgeService {
     }
 
     /**
+     * Updates a workspace on CD.
+     *
+     * @param $workspace_id
+     * @param $name
+     * @param array $custom_fields
+     * @return mixed
+     */
+    public
+    function update_cd_workspace(
+        $workspace_id,
+        $name,
+        $custom_fields = []
+    ) {
+        $details = new \stdClass();
+        $details->workspaceName = $name;
+        $details->customFields = $this->create_cd_custom_fields($custom_fields);
+        $path = 'workspaces/' . $workspace_id . '/updateDetails';
+
+        $http_response = $this->cd_post($path, $details);
+
+        return $http_response->isSuccessful();
+    }
+
+    /**
      * Puts together data in the correct format for Edge API
      * milestone creations.
      *
@@ -178,6 +202,35 @@ class EdgeService {
     }
 
     /**
+     * Gets a CD account with hash.
+     *
+     * @param $hash
+     * @return Account|null
+     */
+    public
+    function get_cd_account($hash) {
+
+        $path = "accounts/$hash";
+
+        $http_response = $this->cd_get($path, []);
+
+        if ($http_response->getStatusCode() === 200) {
+            $account_data = json_decode($http_response->getContent());
+            if (property_exists($account_data->details, 'customFields')) {
+
+                $c_client_id = JmesPath\Env::search(
+                    "customFields[?fieldApiId=='c_client_id'].value | [0]",
+                    $account_data->details
+                );
+            }
+
+            return new Account($account_data->id, $c_client_id);
+        }
+
+        return null;
+    }
+
+    /**
      * Gets all the cd accounts.
      *
      * @return An array of Accounts.
@@ -237,17 +290,49 @@ class EdgeService {
     }
 
     /**
+     * Gets a CD workspace with hash.
+     *
+     * @param $hash
+     * @return Workspace|null
+     */
+    public
+    function get_cd_workspace($hash) {
+
+        $path = "workspaces/$hash";
+
+        $http_response = $this->cd_get($path, []);
+
+        if ($http_response->getStatusCode() === 200) {
+            $workspace_data = json_decode($http_response->getContent());
+            if (property_exists($workspace_data->details, 'customFields')) {
+
+                $c_order_id = JmesPath\Env::search(
+                    "customFields[?fieldApiId=='c_order_id'].value | [0]",
+                    $workspace_data->details
+                );
+            }
+
+            return new Workspace($workspace_data->id, $c_order_id);
+        }
+
+        return null;
+    }
+
+    /**
      * Gets all the cd workspaces.
      *
      * @param $account_hash The account hash of the workspaces.
      * @return An array of workspaces belonging to account.
      */
     public
-    function get_cd_workspaces($account_hash) {
+    function get_cd_workspaces($account_hash = null) {
 
         $workspaces  = [];
         $last_record = '';
-        $path        = 'accounts/' . $account_hash . '/workspaces';
+        $path = 'workspaces';
+        if ($account_hash) {
+            $path = 'accounts/' . $account_hash . '/workspaces';
+        }
 
         do {
 
@@ -290,6 +375,7 @@ class EdgeService {
 
                 $workspaces[$c_order_id] = new Workspace(
                     $workspace_data->id,
+                    $workspace_data->details->workspaceName,
                     $c_order_id
                 );
             }
@@ -298,6 +384,35 @@ class EdgeService {
         } while ($last_record !== '');
 
         return $workspaces;
+    }
+
+    /**
+     * Gets a CD milestone with hash.
+     *
+     * @param $hash
+     * @return Milestone|null
+     */
+    public
+    function get_cd_milestone($hash) {
+
+        $path = "milestones/$hash";
+
+        $http_response = $this->cd_get($path, []);
+
+        if ($http_response->getStatusCode() === 200) {
+            $milestone_data = json_decode($http_response->getContent());
+            if (property_exists($milestone_data->details, 'customFields')) {
+
+                $c_drop_id = JmesPath\Env::search(
+                    "customFields[?fieldApiId=='c_drop_id'].value | [0]",
+                    $milestone_data->details
+                );
+            }
+
+            return new Milestone($milestone_data->id, $c_drop_id);
+        }
+
+        return null;
     }
 
     /**

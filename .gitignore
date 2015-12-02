@@ -4,5 +4,6 @@
 /vendor/
 .DS_Store
 /tmp/
+/data/
 config/cd_config.yml
 config/fattail_config.yml
