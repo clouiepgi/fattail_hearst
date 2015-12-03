@@ -312,7 +312,7 @@ class EdgeService {
                 );
             }
 
-            return new Workspace($workspace_data->id, $c_order_id);
+            return new Workspace($workspace_data->id, $workspace_data->details->workspaceName, $c_order_id);
         }
 
         return null;

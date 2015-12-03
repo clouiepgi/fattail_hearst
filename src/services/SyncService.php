@@ -113,6 +113,7 @@ class SyncService {
         $this->logger->info("Preparing to sync data. This may take some time. Feel like taking a coffee break?\n");
 
         $this->prepare_cache();
+        $this->diff_service->load_from_file();
 
         // Iterate over CSV and process data
         // Skip the first and last rows since they
@@ -126,7 +127,6 @@ class SyncService {
                 strpos($row[$col_map['Position Path']], 'HDM') === false ||
                 strtolower($row[$col_map['(Drop) Custom Unit']]) != "true"
             ) {
-
                 // Skip Non HDM items and custom
                 continue;
             }
@@ -140,11 +140,9 @@ class SyncService {
 
                 // Get order details
                 $order_id = $row[$col_map['Campaign ID']];
-                $order = $this->fattail_service->get_order_by_id($order_id);
 
                 // Get drop details
                 $drop_id = $row[$col_map['Drop ID']];
-                $drop = $this->fattail_service->get_drop_by_id($drop_id);
             }
             catch (\Exception $e) {
                 continue;
@@ -164,7 +162,6 @@ class SyncService {
                 continue;
             }
 
-
             $order_data = [
                 'campaign_name'         => $row[$col_map['Campaign Name']],
                 'c_campaign_status'     => $row[$col_map['IO Status']],
@@ -179,7 +176,7 @@ class SyncService {
             // Sync the order if it's new or changed
             try {
                 $cd_workspace = $this->sync_order(
-                    $order,
+                    $order_id,
                     $cd_account,
                     $order_data,
                     $order_workspace_property_id
@@ -189,11 +186,13 @@ class SyncService {
 
                 $this->logger->error(
                     'Failed to sync order. Skipping the milestone.',
-                    ['Order ID' => $order->OrderID]
+                    ['Order ID' => $order_id]
                 );
 
                 continue;
             }
+
+            $this->diff_service->add_item(DiffService::ORDERS_TYPE, $order_id, $order_data);
 
             $milestone_data = [
                 'name'                   => $row[$col_map['Position Path']],
@@ -203,18 +202,14 @@ class SyncService {
                 'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
                 'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
                 'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
-                'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']]
+                'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']],
+                'package_drop_id'        => $row[$col_map['Package Drop ID']],
             ];
 
-            // Process the drop
-            $package_drop_id = $row[$col_map['Package Drop ID']];
-            if (!empty($package_drop_id)) {
-                $drop->ParentDropID = $package_drop_id;
-            }
             try {
 
                 $cd_milestone = $this->sync_drop(
-                    $drop,
+                    $drop_id,
                     $cd_workspace,
                     $milestone_data,
                     $drop_milestone_property_id
@@ -224,12 +219,17 @@ class SyncService {
 
                 $this->logger->error(
                     'Failed to sync drop. Continuing.',
-                    ['Drop ID' => $drop->DropID]
+                    ['Drop ID' => $drop_id]
                 );
 
                 continue;
             }
+
+            $this->diff_service->add_item(DiffService::DROPS_TYPE, $drop_id, $milestone_data);
+
         }
+
+        $this->diff_service->save_to_file();
 
         $this->logger->info("Finished report sync.\n");
 
@@ -432,7 +432,7 @@ class SyncService {
     /**
      * Syncs a FatTail order with CD.
      *
-     * @param $order The FatTail order.
+     * @param $order_id The FatTail order id.
      * @param $cd_account The Account the workspace will be under.
      * @param $order_data The FatTail order data.
      * @param $order_workspace_property_id The dynamic property id of
@@ -441,7 +441,7 @@ class SyncService {
      */
     private
     function sync_order(
-        $order,
+        $order_id,
         $cd_account,
         $order_data,
         $order_workspace_property_id
@@ -452,7 +452,7 @@ class SyncService {
         $name = trim($name_parts[count($name_parts) - 1]);
 
         $cd_workspace = $cd_account->find_workspace_by_c_order_id(
-            $order->OrderID
+            $order_id
         );
 
         if ($cd_workspace === null) {
@@ -472,79 +472,86 @@ class SyncService {
             }
         }
 
-        $custom_fields = [
-            'c_order_id'            => $order->OrderID,
-            'c_campaign_status'     => $order_data['c_campaign_status'],
-            'c_campaign_start_date' => $order_data['c_campaign_start_date'],
-            'c_campaign_end_date'   => $order_data['c_campaign_end_date']
-        ];
+        $order_checksum_old = $this->diff_service->get_loaded_checksum(DiffService::ORDERS_TYPE, $order_id);
+        $order_checksum = $this->diff_service->generate_checksum($order_data);
 
-        if ($cd_workspace === null) {
+        if (is_null($order_checksum_old) || $order_checksum_old !== $order_checksum) {
+            // We have a new or changed order
+            $order = $this->fattail_service->get_order_by_id($order_id);
+            $custom_fields = [
+                'c_order_id' => $order->OrderID,
+                'c_campaign_status' => $order_data['c_campaign_status'],
+                'c_campaign_start_date' => $order_data['c_campaign_start_date'],
+                'c_campaign_end_date' => $order_data['c_campaign_end_date']
+            ];
 
-            // Create a new workspace if it doesn't exist
-            $cd_workspace = $this->edge_service->create_cd_workspace(
-                $cd_account->hash,
-                $name,
-                $this->workspace_template_hash,
-                $custom_fields
-            );
+            if ($cd_workspace === null) {
 
-            $cd_account->add_workspace($cd_workspace);
-        }
-        else {
+                // Create a new workspace if it doesn't exist
+                $cd_workspace = $this->edge_service->create_cd_workspace(
+                    $cd_account->hash,
+                    $name,
+                    $this->workspace_template_hash,
+                    $custom_fields
+                );
 
-            // Update the workspace if it exists
-            $status = $this->edge_service->update_cd_workspace(
+                $cd_account->add_workspace($cd_workspace);
+            } else {
+
+                // Update the workspace if it exists
+                $status = $this->edge_service->update_cd_workspace(
+                    $cd_workspace->hash,
+                    $name,
+                    $custom_fields
+                );
+
+                if (!$status) {
+                    $this->logger->warning(
+                        "Failed to updated a workspace. Continuing."
+                    );
+                }
+            }
+
+            if (
+                $this->fattail_overwrite ||
+                !$this->is_valid_hash($order_data['workspace_id'])
+            ) {
+
+                // Only need to update Order DynamicPropertyValue
+                // if it doesn't have one
+                $dynamic_properties = $order
+                    ->OrderDynamicProperties
+                    ->DynamicPropertyValue;
+                $order->OrderDynamicProperties->DynamicPropertyValue =
+                    $this->fattail_service->update_dynamic_properties(
+                        $dynamic_properties,
+                        $order_workspace_property_id,
+                        $cd_workspace->hash
+                    );
+
+                $this->fattail_service->update_order($order);
+            }
+
+            // Assign Salesrole
+            $sales_rep_name = $this->format_name($order_data['sales_rep']);
+            $this->edge_service->assign_user_to_role(
+                $sales_rep_name,
+                $this->roles['sales_role_hash'],
                 $cd_workspace->hash,
-                $name,
-                $custom_fields
+                'Sales Rep'
             );
 
-            if (!$status) {
-                $this->logger->warning(
-                    "Failed to updated a workspace. Continuing."
+            // Assign HDM PM
+            if (!empty($order_data['hdm_pm'])) {
+                $hdm_pm_name = $this->format_name($order_data['hdm_pm']);
+                $this->edge_service->assign_user_to_role(
+                    $hdm_pm_name,
+                    $this->roles['hdm_pm_role_hash'],
+                    $cd_workspace->hash,
+                    'HDM Project Manager'
                 );
             }
-        }
 
-        if (
-            $this->fattail_overwrite ||
-            !$this->is_valid_hash($order_data['workspace_id'])
-        ) {
-
-            // Only need to update Order DynamicPropertyValue
-            // if it doesn't have one
-            $dynamic_properties = $order
-                ->OrderDynamicProperties
-                ->DynamicPropertyValue;
-            $order->OrderDynamicProperties->DynamicPropertyValue =
-                $this->fattail_service->update_dynamic_properties(
-                    $dynamic_properties,
-                    $order_workspace_property_id,
-                    $cd_workspace->hash
-                );
-
-            $this->fattail_service->update_order($order);
-        }
-
-        // Assign Salesrole
-        $sales_rep_name = $this->format_name($order_data['sales_rep']);
-        $this->edge_service->assign_user_to_role(
-            $sales_rep_name,
-            $this->roles['sales_role_hash'],
-            $cd_workspace->hash,
-            'Sales Rep'
-        );
-
-        // Assign HDM PM
-        if (!empty($order_data['hdm_pm'])) {
-            $hdm_pm_name = $this->format_name($order_data['hdm_pm']);
-            $this->edge_service->assign_user_to_role(
-                $hdm_pm_name,
-                $this->roles['hdm_pm_role_hash'],
-                $cd_workspace->hash,
-                'HDM Project Manager'
-            );
         }
 
         return $cd_workspace;
@@ -553,7 +560,7 @@ class SyncService {
     /**
      * Syncs a FatTail drop with CD.
      *
-     * @param $drop The FatTail drop.
+     * @param $drop_id The FatTail drop id.
      * @param $cd_workspace The Workspace the milestone will be under.
      * @param $drop_data The FatTail drop data.
      * @param $drop_milestone_property_id The dynamic property id
@@ -562,14 +569,14 @@ class SyncService {
      */
     private
     function sync_drop(
-        $drop,
+        $drop_id,
         $cd_workspace,
         $drop_data,
         $drop_milestone_property_id
     ) {
 
         $cd_milestone = $cd_workspace->find_milestone_by_c_drop_id(
-            $drop->DropID
+            $drop_id
         );
 
         if ($cd_milestone === null) {
@@ -581,70 +588,81 @@ class SyncService {
             }
         }
 
-        $custom_fields = [
-            'c_drop_id'              => $drop->DropID,
-            'c_custom_unit_features' => $drop_data['c_custom_unit_features'],
-            'c_kpi'                  => $drop_data['c_kpi'],
-            'c_drop_cost_new'        => $drop_data['c_drop_cost_new']
-        ];
-        $milestone_name = $drop_data['name'] . '-' . $drop->DropID;
-        if ($cd_milestone === null) {
+        $drop_checksum_old = $this->diff_service->get_loaded_checksum(DiffService::ORDERS_TYPE, $drop_id);
+        $drop_checksum = $this->diff_service->generate_checksum($drop_data);
 
-            $cd_milestone = $this->edge_service->create_cd_milestone(
-                $cd_workspace->hash,
-                $milestone_name,
-                $drop_data['description'],
-                $drop_data['start_date'],
-                $drop_data['end_date'],
-                $custom_fields
-            );
+        if (is_null($drop_checksum_old) || $drop_checksum_old !== $drop_checksum) {
+            // We have a new or changed order
+            $drop = $this->fattail_service->get_drop_by_id($drop_id);
 
-            $cd_workspace->add_milestone($cd_milestone);
-        }
-        else {
-
-            $status = $this->edge_service->update_cd_milestone(
-                $cd_milestone->hash,
-                $milestone_name,
-                $drop_data['description'],
-                $drop_data['start_date'],
-                $drop_data['end_date'],
-                $custom_fields
-            );
-
-            if (!$status) {
-                $this->logger->warning(
-                    "Failed to updated a milestone. Continuing."
-                );
+            if (!empty($drop_data['package_drop_id'])) {
+                $drop->ParentDropID = $drop_data['package_drop_id'];
             }
-        }
 
-        // Add tasklist to milestone
-        $name_parts = explode('|', $drop_data['name']);
-        $drop_type  = $name_parts[count($name_parts) - 1];
+            $custom_fields = [
+                'c_drop_id' => $drop->DropID,
+                'c_custom_unit_features' => $drop_data['c_custom_unit_features'],
+                'c_kpi' => $drop_data['c_kpi'],
+                'c_drop_cost_new' => $drop_data['c_drop_cost_new']
+            ];
+            $milestone_name = $drop_data['name'] . '-' . $drop->DropID;
+            if ($cd_milestone === null) {
 
-        // Get hash from drop type
-        $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
-            $this->tasklist_templates[$drop_type] : [];
-
-        if (
-            $this->fattail_overwrite ||
-            !$this->is_valid_hash($drop_data['milestone_id'])
-        ) {
-
-            // Only need to update Drop DynamicPropertyValue
-            // if it doesn't have one
-            $dynamic_properties = $drop
-                ->DropDynamicProperties
-                ->DynamicPropertyValue;
-            $drop->DropDynamicProperties->DynamicPropertyValue =
-                $this->fattail_service->update_dynamic_properties(
-                    $dynamic_properties,
-                    $drop_milestone_property_id,
-                    $cd_milestone->hash
+                $cd_milestone = $this->edge_service->create_cd_milestone(
+                    $cd_workspace->hash,
+                    $milestone_name,
+                    $drop_data['description'],
+                    $drop_data['start_date'],
+                    $drop_data['end_date'],
+                    $custom_fields
                 );
 
-            $this->fattail_service->update_drop($drop);
+                $cd_workspace->add_milestone($cd_milestone);
+            } else {
+
+                $status = $this->edge_service->update_cd_milestone(
+                    $cd_milestone->hash,
+                    $milestone_name,
+                    $drop_data['description'],
+                    $drop_data['start_date'],
+                    $drop_data['end_date'],
+                    $custom_fields
+                );
+
+                if (!$status) {
+                    $this->logger->warning(
+                        "Failed to updated a milestone. Continuing."
+                    );
+                }
+            }
+
+            // Add tasklist to milestone
+            $name_parts = explode('|', $drop_data['name']);
+            $drop_type = $name_parts[count($name_parts) - 1];
+
+            // Get hash from drop type
+            $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
+                $this->tasklist_templates[$drop_type] : [];
+
+            if (
+                $this->fattail_overwrite ||
+                !$this->is_valid_hash($drop_data['milestone_id'])
+            ) {
+
+                // Only need to update Drop DynamicPropertyValue
+                // if it doesn't have one
+                $dynamic_properties = $drop
+                    ->DropDynamicProperties
+                    ->DynamicPropertyValue;
+                $drop->DropDynamicProperties->DynamicPropertyValue =
+                    $this->fattail_service->update_dynamic_properties(
+                        $dynamic_properties,
+                        $drop_milestone_property_id,
+                        $cd_milestone->hash
+                    );
+
+                $this->fattail_service->update_drop($drop);
+            }
         }
 
         return $cd_milestone;

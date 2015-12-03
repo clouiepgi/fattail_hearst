@@ -60,18 +60,20 @@ class DiffService {
         if ($file) {
             $type = null;
             while (($line = fgets($file)) !== false) {
+
                 // Read file line by line
                 if (strpos($line, self::SEPARATOR) > 0) {
 
                     if (!is_null($type)) {
                         // Break the id => checksum pair and load it into memory
                         $line = explode(self::SEPARATOR, $line);
+                        $line = array_map(function($item) { return trim($item); }, $line);
                         $this->loaded_checksums[$type][$line[0]] = $line[1];
                     }
                 }
                 else {
                     // Switching type
-                    $type = $line;
+                    $type = trim($line);
                 }
             }
             fclose($file);
@@ -88,11 +90,11 @@ class DiffService {
     public
     function get_loaded_checksum($type, $id) {
 
-        if (!isset($this->checksum[$type][$id])) {
+        if (!isset($this->loaded_checksums[$type][$id])) {
             return null;
         }
 
-        return $this->checksum[$type][$id];
+        return $this->loaded_checksums[$type][$id];
     }
 
     /**
@@ -102,6 +104,7 @@ class DiffService {
      */
     public
     function generate_checksum(array $values) {
+
         $joined = join('', $values);
 
         return sprintf("%x", crc32($joined));
@@ -116,11 +119,14 @@ class DiffService {
     public
     function add_item($type, $id, array $values = []) {
 
-        if (!isset($this->checksums[$id])) {
+        if (!isset($this->checksums[$type][$id])) {
             $checksum = $this->generate_checksum($values);
-            $this->checksums[$type][$id] = $checksum;
+            $this->checksums[$type][$id] = $this->loaded_checksums[$type][$id] = $checksum;
+
         }
     }
+
+
 
     /**
      * Save the new checksums to the diff file.
@@ -144,6 +150,4 @@ class DiffService {
             fclose($file);
         }
     }
-
-
 }
