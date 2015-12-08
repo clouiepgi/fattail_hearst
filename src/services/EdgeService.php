@@ -88,6 +88,7 @@ class EdgeService {
 
         $workspace = new Workspace(
             $workspace_hash,
+            $name,
             $custom_fields['c_order_id']
         );
 
