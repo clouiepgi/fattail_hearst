@@ -52,4 +52,22 @@ class Workspace extends Entity {
 
         return null;
     }
+
+    /**
+     * Finds a milestone by name.
+     *
+     * @param $name
+     * @return null
+     */
+    public
+    function find_milestone_by_name($name) {
+
+        foreach($this->milestones as $milestone) {
+            if ($milestone->name === $name) {
+                return $milestone;
+            }
+        }
+
+        return null;
+    }
 }

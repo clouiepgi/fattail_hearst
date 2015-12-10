@@ -158,6 +158,7 @@ class EdgeService {
 
         $milestone = new Milestone(
             $milestone_hash,
+            $name,
             $custom_fields['c_drop_id']
         );
 
@@ -410,7 +411,7 @@ class EdgeService {
                 );
             }
 
-            return new Milestone($milestone_data->id, $c_drop_id);
+            return new Milestone($milestone_data->id, $milestone_data->details->title, $c_drop_id);
         }
 
         return null;
@@ -465,11 +466,9 @@ class EdgeService {
 
                 $milestone = new Milestone(
                     $milestone_data->id,
+                    $milestone_data->details->title,
                     $c_drop_id
                 );
-
-                // Get the tasklists for the milestone
-                $milestone->set_tasklists($this->get_cd_tasklists($milestone));
 
                 $milestones[$c_drop_id] = $milestone;
 

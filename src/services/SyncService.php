@@ -579,7 +579,8 @@ class SyncService {
             $drop_id
         );
 
-        if ($cd_milestone === null) {
+
+        if ($cd_milestone === null && $drop_data['milestone_id']) {
             // See if drop exists in cd
             $this->edge_service->get_cd_milestone($drop_data['milestone_id']);
 
@@ -587,6 +588,26 @@ class SyncService {
                 $cd_workspace->add_milestone($cd_milestone);
             }
         }
+
+
+        $milestone_name = $drop_data['name'] . '-' . $drop_id;
+
+        if ($cd_milestone === null) {
+            // Check local workspace cache
+            $cd_milestone = $cd_workspace->find_milestone_by_name($milestone_name);
+
+            if ($cd_milestone === null) {
+                // Try to check the workspace's existing milestones in CD
+                foreach ($this->edge_service->get_cd_milestones($cd_workspace->hash) as $milestone) {
+                    $cd_workspace->add_milestone($milestone);
+
+                    if ($milestone->name === $milestone_name) {
+                        $cd_milestone = $milestone;
+                    }
+                }
+            }
+        }
+
 
         $drop_checksum_old = $this->diff_service->get_loaded_checksum(DiffService::ORDERS_TYPE, $drop_id);
         $drop_checksum = $this->diff_service->generate_checksum($drop_data);
@@ -605,7 +626,7 @@ class SyncService {
                 'c_kpi' => $drop_data['c_kpi'],
                 'c_drop_cost_new' => $drop_data['c_drop_cost_new']
             ];
-            $milestone_name = $drop_data['name'] . '-' . $drop->DropID;
+
             if ($cd_milestone === null) {
 
                 $cd_milestone = $this->edge_service->create_cd_milestone(
@@ -635,14 +656,6 @@ class SyncService {
                     );
                 }
             }
-
-            // Add tasklist to milestone
-            $name_parts = explode('|', $drop_data['name']);
-            $drop_type = $name_parts[count($name_parts) - 1];
-
-            // Get hash from drop type
-            $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
-                $this->tasklist_templates[$drop_type] : [];
 
             if (
                 $this->fattail_overwrite ||

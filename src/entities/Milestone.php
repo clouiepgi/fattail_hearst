@@ -5,10 +5,12 @@ namespace  CentralDesktop\FatTail\Entities;
 class Milestone extends Entity {
 
     public $c_drop_id  = null;
+    public $name       = null;
     private $tasklists = [];
 
-    function __construct($hash, $c_drop_id) {
+    function __construct($hash, $name, $c_drop_id) {
         parent::__construct($hash);
+        $this->name = $name;
         $this->c_drop_id = $c_drop_id;
     }
 
