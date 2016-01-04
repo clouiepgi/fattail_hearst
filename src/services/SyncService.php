@@ -81,13 +81,14 @@ class SyncService {
         $start_date = date('m/d/Y');
         $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
 
-        $csv_path = $this->download_report_csv(
-            $report,
-            $this->tmp_dir,
-            $start_date,
-            $end_date
-        );
-        $reader = Reader::createFromPath($csv_path);
+//        $csv_path = $this->download_report_csv(
+//            $report,
+//            $this->tmp_dir,
+//            $start_date,
+//            $end_date
+//        );
+//        $reader = Reader::createFromPath($csv_path);
+        $reader = Reader::createFromPath('tmp/test.csv');
         $rows = $reader->fetchAll();
 
         $order_workspace_property_id = $this
@@ -371,7 +372,11 @@ class SyncService {
     function prepare_cache() {
 
         // Populate local copy of all workspace in case a search is needed
-        $this->cache->set_workspaces($this->edge_service->get_cd_workspaces());
+        $workspaces = [];
+        foreach ($this->edge_service->get_cd_accounts() as $cd_account) {
+            $workspaces = array_merge($workspaces, $this->edge_service->get_cd_workspaces($cd_account->hash));
+        }
+        $this->cache->set_workspaces($workspaces);
     }
 
     /**
