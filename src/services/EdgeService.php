@@ -767,7 +767,7 @@ class EdgeService {
 
         $users = $this->cache->get_users();
 
-        if ($users === null) {
+        if ($users === null || empty($user)) {
             // Cache hasn't been set yet
 
             $last_record = '';
@@ -802,7 +802,6 @@ class EdgeService {
         }
 
         $full_name_lower = strtolower($full_name);
-
         if (array_key_exists($full_name_lower, $users)) {
 
             return $users[$full_name_lower];
