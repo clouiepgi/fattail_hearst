@@ -81,14 +81,13 @@ class SyncService {
         $start_date = date('m/d/Y');
         $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
 
-//        $csv_path = $this->download_report_csv(
-//            $report,
-//            $this->tmp_dir,
-//            $start_date,
-//            $end_date
-//        );
-//        $reader = Reader::createFromPath($csv_path);
-        $reader = Reader::createFromPath('tmp/test.csv');
+        $csv_path = $this->download_report_csv(
+            $report,
+            $this->tmp_dir,
+            $start_date,
+            $end_date
+        );
+        $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
         $order_workspace_property_id = $this
