@@ -11,6 +11,7 @@ namespace CentralDesktop\FatTail\Services\Client;
 
 use CentralDesktop\FatTail\Services\Auth\EdgeAuth;
 
+use Exception;
 use Psr\Log\LoggerAwareTrait;
 
 class EdgeClient {
@@ -51,11 +52,12 @@ class EdgeClient {
      * @param $path The path for the resource.
      * @param $query_params The query string parameters in array key value form.
      * @param $content_array The content to send in array format.
+     * @param $attempts The number of times to try an request before giving up
      *
      * @return guzzlehttp response
      */
     public
-    function call($method, $path, $query_params = [], $content_array = []) {
+    function call($method, $path, $query_params = [], $content_array = [], $attempts = 3) {
 
         // Get URL and header information
         $url = $this->get_url($path, $query_params);
@@ -64,29 +66,42 @@ class EdgeClient {
         ]);
         $content = json_encode($content_array);
 
-        // Make call based on method type
-        $method = strtolower($method);
-        switch ($method) {
-            case EdgeClient::METHOD_POST:
-                $http_response = $this->http_client->post($url, $headers, $content);
-                break;
-            case EdgeClient::METHOD_DELETE:
-                $http_response = $this->http_client->delete($url, $headers);
-                break;
-            default:
-                $http_response = $this->http_client->get($url, $headers);
+        try {
+            // Make call based on method type
+            $method = strtolower($method);
+            switch ($method) {
+                case EdgeClient::METHOD_POST:
+                    $http_response = $this->http_client->post($url, $headers, $content);
+                    break;
+                case EdgeClient::METHOD_DELETE:
+                    $http_response = $this->http_client->delete($url, $headers);
+                    break;
+                default:
+                    $http_response = $this->http_client->get($url, $headers);
+            }
+
+            if (
+                $http_response->getStatusCode() === 401 &&
+                $http_response->getContent() == 'Access token has expired'
+            ) {
+
+                // If the access token has expired, get a new one and try again
+                $this->logger->info('Access token has expired, attempting to get a new one.');
+                $this->access_token = $this->auth_client->get_access_token();
+
+                $http_response = $this->call($method, $path, $query_params, $content_array);
+            }
         }
-
-        if (
-            $http_response->getStatusCode() === 401 &&
-            $http_response->getContent() == 'Access token has expired'
-        ) {
-
-            // If the access token has expired, get a new one and try again
-            $this->logger->info('Access token has expired, attempting to get a new one.');
-            $this->access_token = $this->auth_client->get_access_token();
-
-            $http_response = $this->call($method, $path, $query_params, $content_array);
+        catch (Exception $e) {
+            $attempts--;
+            if ($attempts > 0) {
+                // If a request fails, lets try it again until we're out of attempts
+                $this->call($method, $path, $query_params, $content_array, $attempts);
+            }
+            else {
+                // If we're out of attempts throw the exception back up
+                throw $e;
+            }
         }
 
         return $http_response;

@@ -63,7 +63,7 @@ class Workspace extends Entity {
     function find_milestone_by_name($name) {
 
         foreach($this->milestones as $milestone) {
-            if ($milestone->name === $name) {
+            if (trim($milestone->name) === trim($name)) {
                 return $milestone;
             }
         }

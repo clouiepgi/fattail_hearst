@@ -583,16 +583,14 @@ class SyncService {
             $drop_id
         );
 
-
         if ($cd_milestone === null && $drop_data['milestone_id']) {
             // See if drop exists in cd
-            $this->edge_service->get_cd_milestone($drop_data['milestone_id']);
+            $cd_milestone = $this->edge_service->get_cd_milestone($drop_data['milestone_id']);
 
             if ($cd_milestone !== null) {
                 $cd_workspace->add_milestone($cd_milestone);
             }
         }
-
 
         $milestone_name = $drop_data['name'] . '-' . $drop_id;
 
@@ -605,13 +603,12 @@ class SyncService {
                 foreach ($this->edge_service->get_cd_milestones($cd_workspace->hash) as $milestone) {
                     $cd_workspace->add_milestone($milestone);
 
-                    if ($milestone->name === $milestone_name) {
+                    if (trim($milestone->name) === trim($milestone_name)) {
                         $cd_milestone = $milestone;
                     }
                 }
             }
         }
-
 
         $drop_checksum_old = $this->diff_service->get_loaded_checksum(DiffService::ORDERS_TYPE, $drop_id);
         $drop_checksum = $this->diff_service->generate_checksum($drop_data);
