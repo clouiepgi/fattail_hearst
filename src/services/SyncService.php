@@ -373,7 +373,9 @@ class SyncService {
         // Populate local copy of all workspace in case a search is needed
         $workspaces = [];
         foreach ($this->edge_service->get_cd_accounts() as $cd_account) {
+            $this->cache->add_account($cd_account);
             $workspaces = array_merge($workspaces, $this->edge_service->get_cd_workspaces($cd_account->hash));
+            $cd_account->set_workspaces($workspaces);
         }
         $this->cache->set_workspaces($workspaces);
     }
