@@ -1,0 +1,123 @@
+parameters:
+
+  # NO NEED TO MODIFY ANYTHING BELOW THIS LINE
+  # Configure settings in fattail_config.yml and cd_config.yml
+
+
+
+
+
+
+
+
+
+  logger.level.debug: 100
+  logger.level.info: 200
+  logger.level.warn: 300
+
+  logger.level: %logger.level.info%
+
+  auth.cd.auth_url: https://oidc.imeetcentral.com/oauth2/token
+  auth.cd.issuer: oidc.imeetcentral.com
+  auth.cd.scp: cd.user
+  auth.cd.grant_type: urn:ietf:params:oauth:grant-type:jwt-bearer
+
+  edge.base_url: https://edge.imeetcentral.com/v1/
+
+  tmp_dir: tmp/
+  data_dir: data/
+  diff_file: diff.txt
+
+services:
+    logger.processor.proc:
+        class: Monolog\Processor\ProcessIdProcessor
+
+    logger.processor.mem:
+        class: Monolog\Processor\MemoryUsageProcessor
+
+    logger.handler.default:
+        class: Monolog\Handler\ErrorLogHandler
+        arguments: [0, %logger.level%]
+
+    logger.default:
+      class: Monolog\Logger
+      arguments: ["cd-fattail"]
+      calls:
+        - [pushProcessor, ["@logger.processor.mem"]]
+        - [pushProcessor, ["@logger.processor.proc"]]
+        - [pushHandler, ["@logger.handler.default"]]
+
+
+    console.command.sync:
+      class: CentralDesktop\FatTail\SyncCommand
+      arguments: ["@sync_service", %fattail.report_name%]
+      calls:
+        - [setLogger, ["@logger.default"]]
+
+
+    console.application:
+      class: Symfony\Component\Console\Application
+      calls:
+        - [add, [@console.command.sync]]
+
+    http.client:
+      class: Buzz\Browser
+      calls:
+        - [setClient, [@file_get_contents]]
+
+    file_get_contents:
+      class: Buzz\Client\FileGetContents
+      calls:
+        - [setVerifyPeer, [false]]
+        - [setTimeout, [300]]
+
+    soap.client:
+      class: WsSoap\Client
+      arguments: [%fattail.base_url%, { wsUsername: %fattail.username%, wsPassword: %fattail.password%, keep_alive: false, exceptions: true }]
+
+    soap.fattail.api_version_header:
+      class: SoapHeader
+      arguments: [%fattail.api_namespace%, Version, %fattail.api_version%]
+
+    auth.edge:
+      class: CentralDesktop\FatTail\Services\Auth\EdgeAuth
+      arguments: [%auth.cd.auth_url%, %auth.cd.issuer%, %auth.cd.scp%, %auth.cd.grant_type%, %auth.cd.client_id%, %auth.cd.private_key%, "@http.client"]
+      calls:
+        - [setLogger, ["@logger.default"]]
+
+    client.edge:
+      class: CentralDesktop\FatTail\Services\Client\EdgeClient
+      arguments: ["@auth.edge", "@http.client", %edge.base_url%]
+      calls:
+        - [setLogger, ["@logger.default"]]
+
+    client.fattail:
+      class: CentralDesktop\FatTail\Services\Client\FatTailClient
+      arguments: ["@soap.client", "@soap.fattail.api_version_header"]
+      calls:
+        - [setLogger, ["@logger.default"]]
+
+    sync_service:
+      class: CentralDesktop\FatTail\Services\SyncService
+      arguments: ["@edge_service", "@fattail_service", "@sync_cache", "@diff_service", %tmp_dir%, %cd.workspace_template_hash%, %cd.roles%, %fattail.report_timeout%, %fattail.report_span%, %tasklist_templates%, %fattail.overwrite%]
+      calls:
+        - [setLogger, ["@logger.default"]]
+
+    edge_service:
+      class: CentralDesktop\FatTail\Services\EdgeService
+      arguments: ["@client.edge", "@sync_cache"]
+      calls:
+        - [setLogger, ["@logger.default"]]
+
+    fattail_service:
+      class: CentralDesktop\FatTail\Services\FatTailService
+      arguments: ["@client.fattail"]
+      class:
+        - [setLogger, ["@logger.default"]]
+
+    sync_cache:
+      class: CentralDesktop\FatTail\Services\SyncCache
+
+    diff_service:
+      class: CentralDesktop\FatTail\Services\DiffService
+      arguments: [%data_dir%, %diff_file%]

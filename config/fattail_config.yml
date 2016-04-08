@@ -1,0 +1,14 @@
+parameters:
+
+  # Configure the FatTail settings here
+  fattail.username: hearst.api
+  fattail.password: hearst123
+  fattail.base_url: http://adserver.fattail.com/abn/ws/adbookconnect.svc?singleWsdl
+  fattail.report_name: ADTECH CD Report Copy
+  fattail.api_namespace: http://www.FatTail.com/api
+  fattail.api_version: 10
+  fattail.overwrite: false #true will overwrite data on FatTail
+
+  # FatTail report generation timeout (in seconds)
+  fattail.report_timeout: 600
+  fattail.report_span: 2 # In years
