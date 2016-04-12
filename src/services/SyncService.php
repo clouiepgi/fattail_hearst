@@ -66,7 +66,7 @@ class SyncService {
      * Syncs Edge and FatTail.
      */
     public
-    function sync($report_name = '') {
+    function sync_old($report_name = '') {
 
         $this->logger->info("Starting report sync.\n");
 
@@ -775,7 +775,7 @@ class SyncService {
      * Syncs Edge and FatTail.
      */
     public
-    function sync2($report_name = '') {
+    function sync($report_name = '') {
 
         $this->logger->info("Starting report sync.\n");
 

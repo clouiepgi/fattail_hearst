@@ -42,6 +42,6 @@ class SyncCommand extends Command {
     function execute(InputInterface $input, OutputInterface $output) {
         $this->logger->info("Running sync");
 
-        $this->sync_service->sync2($this->report_name);
+        $this->sync_service->sync($this->report_name);
     }
 }
