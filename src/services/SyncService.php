@@ -790,13 +790,13 @@ class SyncService {
         $start_date = date('m/d/Y');
         $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
 
-        //$csv_path = $this->download_report_csv(
-        //    $report,
-        //    $this->tmp_dir,
-        //    $start_date,
-        //    $end_date
-        //);
-        $csv_path = "/usr/local/apache/fattail_hearst/tmp/4071.csv";
+        $csv_path = $this->download_report_csv(
+            $report,
+            $this->tmp_dir,
+            $start_date,
+            $end_date
+        );
+        //$csv_path = "/usr/local/apache/fattail_hearst/tmp/4071.csv";
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
@@ -951,7 +951,7 @@ class SyncService {
         $this->logger->info("Finished report sync.\n");
 
         $this->logger->info("Cleaning up temporary CSV report.\n");
-        //$this->clean_up($this->tmp_dir);
+        $this->clean_up($this->tmp_dir);
         $this->logger->info("Finished cleaning up CSV report.\n");
 
         $this->logger->info("Done.\n");
