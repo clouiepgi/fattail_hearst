@@ -286,6 +286,8 @@ class EdgeService {
             }
 
             $last_record = $json->lastRecord;
+            if($last_record == "")
+                    break;
         } while ($last_record !== '');
 
         return $accounts;
@@ -383,6 +385,10 @@ class EdgeService {
             }
 
             $last_record = $json->lastRecord;
+            if($last_record == ""){
+                //print_r($json);
+                break;
+            }
         } while ($last_record !== '');
 
         return $workspaces;
@@ -796,6 +802,8 @@ class EdgeService {
                 }
 
                 $last_record = $json->lastRecord;
+                if($last_record == "")
+                    break;
             } while ($last_record !== '');
 
             $this->cache->set_users($users);

@@ -65,187 +65,187 @@ class SyncService {
     /**
      * Syncs Edge and FatTail.
      */
-    public
-    function sync_old($report_name = '') {
-
-        $this->logger->info("Starting report sync.\n");
-
-        $report = $this->fattail_service
-                  ->get_saved_report_info_by_name($report_name);
-
-        if ($report === null) {
-            $this->logger->error("Unable to find requested report. Exiting.\n");
-            exit;
-        }
-
-        $start_date = date('m/d/Y');
-        $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
-
-        $csv_path = $this->download_report_csv(
-            $report,
-            $this->tmp_dir,
-            $start_date,
-            $end_date
-        );
-        //$csv_path = "/usr/local/apache/fattail_hearst/tmp/4071.csv";
-        $reader = Reader::createFromPath($csv_path);
-        $rows = $reader->fetchAll();
-
-        $order_workspace_property_id = $this
-                                       ->fattail_service
-                                       ->get_order_dynamic_property_id(
-                                           $this->WORKSPACE_DYNAMIC_PROP_NAME
-                                       );
-
-        $drop_milestone_property_id = $this
-                                      ->fattail_service
-                                      ->get_drop_dynamic_property_id(
-                                          $this->MILESTONE_DYNAMIC_PROP_NAME
-                                      );
-
-        // Create mapping of column name with column index
-        // Not necessary, but makes it easier to work with the data.
-        // Can remove if optimization issues arise because of this
-        $col_map = [];
-        foreach ($rows[0] as $index => $name) {
-            $col_map[$name] = $index;
-        }
-
-        $this->logger->info("Preparing to sync data. This may take some time. Feel like taking a coffee break?\n");
-
-        //$this->prepare_cache();
-        $this->diff_service->load_from_file();
-
-        // Iterate over CSV and process data
-        // Skip the first and last rows since they
-        // don't have the data we need
-        for ($i = 1, $len = count($rows); $i < $len; $i++) {
-
-            $row = $rows[$i];
-
-            if (
-                count($row) === 1 || // Empty rows
-                strpos($row[$col_map['Position Path']], 'HDM') === false ||
-                strtolower($row[$col_map['(Drop) Custom Unit']]) != "true"
-            ) {
-                if(!preg_match("/50%/",$row[$col_map['IO Status']])){
-                    // Skip Non HDM items and custom
-                    continue;
-                }
-            }
-
-            $this->logger->info("Processing next item. Please wait.");
-
-            try {
-                // Get client details
-                $client_id = $row[$col_map['Client ID']];
-                $client = $this->fattail_service->get_client_by_id($client_id);
-
-                // Get order details
-                $order_id = $row[$col_map['Campaign ID']];
-
-                // Get drop details
-                $drop_id = $row[$col_map['Drop ID']];
-            }
-            catch (\Exception $e) {
-                continue;
-            }
-
-            // Process the client
-            try {
-                $cd_account = $this->sync_client($client);
-            }
-            catch (\Exception $e) {
-
-                $this->logger->error(
-                    'Failed to sync client. Skipping the workspace and milestone.',
-                    ['Client ID' => $client->ClientID]
-                );
-
-                continue;
-            }
-
-            $order_data = [
-                'campaign_name'         => $row[$col_map['Campaign Name']],
-                'c_campaign_status'     => $row[$col_map['IO Status']],
-                'c_campaign_start_date' => $row[$col_map['Campaign Start Date']],
-                'c_campaign_end_date'   => $row[$col_map['Campaign End Date']],
-                'workspace_id'          => $row[$col_map['(Campaign) CD Workspace ID']],
-                'sales_rep'             => $row[$col_map['Sales Rep']],
-                'c_hdm_pm'              => $row[$col_map['HDM | Project Manager']],
-                'c_hdm_tam'             => $row[$col_map['Operations Contact']],
-                'c_total_order_revenue' => $row[$col_map['Total Campaign Value']]
-            ];
-
-            // Process the order
-            // Sync the order if it's new or changed
-            try {
-                $cd_workspace = $this->sync_order(
-                    $order_id,
-                    $cd_account,
-                    $order_data,
-                    $order_workspace_property_id
-                );
-            }
-            catch (\Exception $e) {
-
-                $this->logger->error(
-                    'Failed to sync order. Skipping the milestone.',
-                    ['Order ID' => $order_id]
-                );
-
-                continue;
-            }
-
-            $this->diff_service->add_item(DiffService::ORDERS_TYPE, $order_id, $order_data);
-            
-            //TODO: add custom unit check, if true push milestones else no
-            
-            //$milestone_data = [
-            //    'name'                   => $row[$col_map['Position Path']],
-            //    'description'            => $row[$col_map['Drop Description']],
-            //    'start_date'             => $row[$col_map['Start Date']],
-            //    'end_date'               => $row[$col_map['End Date']],
-            //    'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
-            //    'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
-            //    'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
-            //    'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']],
-            //    'package_drop_id'        => $row[$col_map['Package Drop ID']],
-            //];
-            //
-            //try {
-            //
-            //    $cd_milestone = $this->sync_drop(
-            //        $drop_id,
-            //        $cd_workspace,
-            //        $milestone_data,
-            //        $drop_milestone_property_id
-            //    );
-            //}
-            //catch (\Exception $e) {
-            //
-            //    $this->logger->error(
-            //        'Failed to sync drop. Continuing.',
-            //        ['Drop ID' => $drop_id]
-            //    );
-            //
-            //    continue;
-            //}
-            //
-            //$this->diff_service->add_item(DiffService::DROPS_TYPE, $drop_id, $milestone_data);
-
-        }
-
-        $this->diff_service->save_to_file();
-
-        $this->logger->info("Finished report sync.\n");
-
-        $this->logger->info("Cleaning up temporary CSV report.\n");
-        //$this->clean_up($this->tmp_dir);
-        $this->logger->info("Finished cleaning up CSV report.\n");
-
-        $this->logger->info("Done.\n");
-    }
+    //public
+    //function sync_old($report_name = '') {
+    //
+    //    $this->logger->info("Starting report sync.\n");
+    //
+    //    $report = $this->fattail_service
+    //              ->get_saved_report_info_by_name($report_name);
+    //
+    //    if ($report === null) {
+    //        $this->logger->error("Unable to find requested report. Exiting.\n");
+    //        exit;
+    //    }
+    //
+    //    $start_date = date('m/d/Y');
+    //    $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
+    //
+    //    $csv_path = $this->download_report_csv(
+    //        $report,
+    //        $this->tmp_dir,
+    //        $start_date,
+    //        $end_date
+    //    );
+    //    //$csv_path = "/usr/local/apache/fattail_hearst/tmp/4071.csv";
+    //    $reader = Reader::createFromPath($csv_path);
+    //    $rows = $reader->fetchAll();
+    //
+    //    $order_workspace_property_id = $this
+    //                                   ->fattail_service
+    //                                   ->get_order_dynamic_property_id(
+    //                                       $this->WORKSPACE_DYNAMIC_PROP_NAME
+    //                                   );
+    //
+    //    $drop_milestone_property_id = $this
+    //                                  ->fattail_service
+    //                                  ->get_drop_dynamic_property_id(
+    //                                      $this->MILESTONE_DYNAMIC_PROP_NAME
+    //                                  );
+    //
+    //    // Create mapping of column name with column index
+    //    // Not necessary, but makes it easier to work with the data.
+    //    // Can remove if optimization issues arise because of this
+    //    $col_map = [];
+    //    foreach ($rows[0] as $index => $name) {
+    //        $col_map[$name] = $index;
+    //    }
+    //
+    //    $this->logger->info("Preparing to sync data. This may take some time. Feel like taking a coffee break?\n");
+    //
+    //    $this->prepare_cache();
+    //    $this->diff_service->load_from_file();
+    //
+    //    // Iterate over CSV and process data
+    //    // Skip the first and last rows since they
+    //    // don't have the data we need
+    //    for ($i = 1, $len = count($rows); $i < $len; $i++) {
+    //
+    //        $row = $rows[$i];
+    //
+    //        if (
+    //            count($row) === 1 || // Empty rows
+    //            strpos($row[$col_map['Position Path']], 'HDM') === false ||
+    //            strtolower($row[$col_map['(Drop) Custom Unit']]) != "true"
+    //        ) {
+    //            if(!preg_match("/50%/",$row[$col_map['IO Status']])){
+    //                // Skip Non HDM items and custom
+    //                continue;
+    //            }
+    //        }
+    //
+    //        $this->logger->info("Processing next item. Please wait.");
+    //
+    //        try {
+    //            // Get client details
+    //            $client_id = $row[$col_map['Client ID']];
+    //            $client = $this->fattail_service->get_client_by_id($client_id);
+    //
+    //            // Get order details
+    //            $order_id = $row[$col_map['Campaign ID']];
+    //
+    //            // Get drop details
+    //            $drop_id = $row[$col_map['Drop ID']];
+    //        }
+    //        catch (\Exception $e) {
+    //            continue;
+    //        }
+    //
+    //        // Process the client
+    //        try {
+    //            $cd_account = $this->sync_client($client);
+    //        }
+    //        catch (\Exception $e) {
+    //
+    //            $this->logger->error(
+    //                'Failed to sync client. Skipping the workspace and milestone.',
+    //                ['Client ID' => $client->ClientID]
+    //            );
+    //
+    //            continue;
+    //        }
+    //
+    //        $order_data = [
+    //            'campaign_name'         => $row[$col_map['Campaign Name']],
+    //            'c_campaign_status'     => $row[$col_map['IO Status']],
+    //            'c_campaign_start_date' => $row[$col_map['Campaign Start Date']],
+    //            'c_campaign_end_date'   => $row[$col_map['Campaign End Date']],
+    //            'workspace_id'          => $row[$col_map['(Campaign) CD Workspace ID']],
+    //            'sales_rep'             => $row[$col_map['Sales Rep']],
+    //            'c_hdm_pm'              => $row[$col_map['HDM | Project Manager']],
+    //            'c_hdm_tam'             => $row[$col_map['Operations Contact']],
+    //            'c_total_order_revenue' => $row[$col_map['Total Campaign Value']]
+    //        ];
+    //
+    //        // Process the order
+    //        // Sync the order if it's new or changed
+    //        try {
+    //            $cd_workspace = $this->sync_order(
+    //                $order_id,
+    //                $cd_account,
+    //                $order_data,
+    //                $order_workspace_property_id
+    //            );
+    //        }
+    //        catch (\Exception $e) {
+    //
+    //            $this->logger->error(
+    //                'Failed to sync order. Skipping the milestone.',
+    //                ['Order ID' => $order_id]
+    //            );
+    //
+    //            continue;
+    //        }
+    //
+    //        $this->diff_service->add_item(DiffService::ORDERS_TYPE, $order_id, $order_data);
+    //        
+    //        //TODO: add custom unit check, if true push milestones else no
+    //        
+    //        //$milestone_data = [
+    //        //    'name'                   => $row[$col_map['Position Path']],
+    //        //    'description'            => $row[$col_map['Drop Description']],
+    //        //    'start_date'             => $row[$col_map['Start Date']],
+    //        //    'end_date'               => $row[$col_map['End Date']],
+    //        //    'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
+    //        //    'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
+    //        //    'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
+    //        //    'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']],
+    //        //    'package_drop_id'        => $row[$col_map['Package Drop ID']],
+    //        //];
+    //        //
+    //        //try {
+    //        //
+    //        //    $cd_milestone = $this->sync_drop(
+    //        //        $drop_id,
+    //        //        $cd_workspace,
+    //        //        $milestone_data,
+    //        //        $drop_milestone_property_id
+    //        //    );
+    //        //}
+    //        //catch (\Exception $e) {
+    //        //
+    //        //    $this->logger->error(
+    //        //        'Failed to sync drop. Continuing.',
+    //        //        ['Drop ID' => $drop_id]
+    //        //    );
+    //        //
+    //        //    continue;
+    //        //}
+    //        //
+    //        //$this->diff_service->add_item(DiffService::DROPS_TYPE, $drop_id, $milestone_data);
+    //
+    //    }
+    //
+    //    $this->diff_service->save_to_file();
+    //
+    //    $this->logger->info("Finished report sync.\n");
+    //
+    //    $this->logger->info("Cleaning up temporary CSV report.\n");
+    //    //$this->clean_up($this->tmp_dir);
+    //    $this->logger->info("Finished cleaning up CSV report.\n");
+    //
+    //    $this->logger->info("Done.\n");
+    //}
 
     /**
      * Downloads a CSV report from FatTail.
@@ -555,8 +555,10 @@ class SyncService {
 
             // Assign Salesrole
             if (!empty($order_data['sales_rep'])) {
+                print_r("sales");
                 //$order_data['sales_rep'] = "Todorov, Alexander";
                 $sales_rep_name = $this->format_name($order_data['sales_rep']);
+                //print_r($sales_rep_name);
                 $this->edge_service->assign_user_to_role(
                     $sales_rep_name,
                     $this->roles['sales_role_hash'],
@@ -567,6 +569,7 @@ class SyncService {
 
             // Assign HDM PM
             if (!empty($order_data['c_hdm_pm'])) {
+                print_r("pm");
                 //$order_data['c_hdm_pm'] = "Ford, Nazinga";
                 $hdm_pm_name = $this->format_name($order_data['c_hdm_pm']);
                 //print_r($this->edge_service->get_cd_user_id_by_name($hdm_pm_name));
@@ -580,9 +583,11 @@ class SyncService {
             }
             
             // Assign TAM
-            //print_r($order_data);
+            print_r($order_data);
             if (!empty($order_data['c_hdm_tam'])) {
-                //$order_data['c_hdm_tam'] = "Todorov, Alexander";
+                print_r("tam");
+                 //print_r($order_data['c_hdm_tam']);
+                //$order_data['c_hdm_tam'] = "freda london";
                 //$hdm_tam_name = $this->format_name($order_data['c_hdm_tam']);
                 //print_r($hdm_tam_name);
                 //print_r($this->edge_service->get_cd_user_id_by_name($hdm_tam_name));die;
@@ -840,7 +845,9 @@ class SyncService {
         $this->logger->info("Preparing to sync data. This may take some time. Feel like taking a coffee break?\n");
 
         $this->prepare_cache();
+        print_r("Done Cache\n");
         $this->diff_service->load_from_file();
+        print_r("Done Diff\n");
 
         // Iterate over CSV and process data
         // Skip the first and last rows since they
