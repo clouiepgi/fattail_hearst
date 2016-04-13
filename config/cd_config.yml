@@ -8,6 +8,7 @@ parameters:
     sales_role_hash: WzE1OCwxNzEyXQ
     hdm_pm_role_hash: WzE1OCwyMDkxXQ
     tam_role_hash: WzE1OCwxOTIzXQ
+    account_manager_hash: WzE1OCwzNDAwXQ
 
   # Put the Central Desktop client id and private key here
   auth.cd.client_id: 49c7dbf3-7acf-402f-81de-dffe03025b3b

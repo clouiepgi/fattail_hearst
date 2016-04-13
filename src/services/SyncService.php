@@ -81,13 +81,13 @@ class SyncService {
         $start_date = date('m/d/Y');
         $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
 
-        //$csv_path = $this->download_report_csv(
-        //    $report,
-        //    $this->tmp_dir,
-        //    $start_date,
-        //    $end_date
-        //);
-        $csv_path = "/usr/local/apache/fattail_hearst/tmp/4071.csv";
+        $csv_path = $this->download_report_csv(
+            $report,
+            $this->tmp_dir,
+            $start_date,
+            $end_date
+        );
+        //$csv_path = "/usr/local/apache/fattail_hearst/tmp/4071.csv";
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
@@ -459,7 +459,7 @@ class SyncService {
         $order_data,
         $order_workspace_property_id
     ) {
-
+//print_r($order_data);die;
         // Get the name from the campaign name
         $name_parts = explode('|', $order_data['campaign_name']);
         $name = trim($name_parts[count($name_parts) - 1]);
@@ -554,14 +554,16 @@ class SyncService {
             }
 
             // Assign Salesrole
-            $order_data['sales_rep'] = "Todorov, Alexander";
-            $sales_rep_name = $this->format_name($order_data['sales_rep']);
-            $this->edge_service->assign_user_to_role(
-                $sales_rep_name,
-                $this->roles['sales_role_hash'],
-                $cd_workspace->hash,
-                'Sales Rep'
-            );
+            if (!empty($order_data['sales_rep'])) {
+                //$order_data['sales_rep'] = "Todorov, Alexander";
+                $sales_rep_name = $this->format_name($order_data['sales_rep']);
+                $this->edge_service->assign_user_to_role(
+                    $sales_rep_name,
+                    $this->roles['sales_role_hash'],
+                    $cd_workspace->hash,
+                    'Sales Rep'
+                );
+            }
 
             // Assign HDM PM
             if (!empty($order_data['c_hdm_pm'])) {
@@ -581,14 +583,29 @@ class SyncService {
             //print_r($order_data);
             if (!empty($order_data['c_hdm_tam'])) {
                 //$order_data['c_hdm_tam'] = "Todorov, Alexander";
-                $hdm_tam_name = $this->format_name($order_data['c_hdm_tam']);
+                //$hdm_tam_name = $this->format_name($order_data['c_hdm_tam']);
+                //print_r($hdm_tam_name);
+                //print_r($this->edge_service->get_cd_user_id_by_name($hdm_tam_name));die;
+                $this->edge_service->assign_user_to_role(
+                    $order_data['c_hdm_tam'],
+                    $this->roles['tam_role_hash'],
+                    $cd_workspace->hash,
+                    'TAM'
+                );
+            }
+            
+            // Assign Account Manager
+            //print_r($order_data);
+            if (!empty($order_data['c_account_manager'])) {
+                //$order_data['c_hdm_tam'] = "Todorov, Alexander";
+                $hdm_tam_name = $this->format_name($order_data['c_account_manager']);
                 //print_r($hdm_tam_name);
                 //print_r($this->edge_service->get_cd_user_id_by_name($hdm_tam_name));die;
                 $this->edge_service->assign_user_to_role(
                     $hdm_tam_name,
-                    $this->roles['tam_role_hash'],
+                    $this->roles['account_manager_hash'],
                     $cd_workspace->hash,
-                    'TAM'
+                    'Account Manager'
                 );
             }
 //die;
@@ -796,7 +813,7 @@ class SyncService {
             $start_date,
             $end_date
         );
-        //$csv_path = "/usr/local/apache/fattail_hearst/tmp/4071.csv";
+        //$csv_path = "/usr/local/apache/fattail_cd/tmp/4751.csv";
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
@@ -839,7 +856,7 @@ class SyncService {
                 // Skip Non HDM items and custom
                 continue;
             }
-            
+
 
             $this->logger->info("Processing next item. Please wait.");
 
@@ -881,7 +898,8 @@ class SyncService {
                 'sales_rep'             => $row[$col_map['Sales Rep']],
                 'c_hdm_pm'              => $row[$col_map['HDM | Project Manager']],
                 'c_hdm_tam'             => $row[$col_map['Operations Contact']],
-                'c_total_order_revenue' => $row[$col_map['Total Campaign Value']]
+                'c_total_order_revenue' => $row[$col_map['Total Campaign Value']],
+                'c_account_manager'     => $row[$col_map['HDM | Account Manager']],
             ];
 
             // Process the order
