@@ -1,6 +1,6 @@
 <?php
 
-require_once("vendor/autoload.php");
+require_once("/usr/local/apache/fattail_cd/vendor/autoload.php");
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\Config\FileLocator;
