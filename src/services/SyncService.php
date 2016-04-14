@@ -325,7 +325,8 @@ class SyncService {
                     $custom_fields
                 );
             
-            
+                $this->logger->info("Create a New Workspace.\n");
+                $this->logger->info(print_r($cd_workspace));
                 $cd_account->add_workspace($cd_workspace);
             } else {
             
