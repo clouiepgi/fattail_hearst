@@ -285,7 +285,7 @@ class EdgeService {
                 );
             }
 
-            $last_record = $json->lastRecord;
+            $last_record = @$json->lastRecord;
             if($last_record == "")
             {
                 break;
@@ -386,7 +386,7 @@ class EdgeService {
                 );
             }
 
-            $last_record = $json->lastRecord;
+            $last_record = @$json->lastRecord;
             if($last_record == "")
             {
                 break;
@@ -802,7 +802,7 @@ class EdgeService {
                     break;
                 }
 
-                $last_record = $json->lastRecord;
+                $last_record = @$json->lastRecord;
                 if($last_record == "")
                 {
                     break;

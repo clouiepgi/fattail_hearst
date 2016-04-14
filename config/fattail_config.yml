@@ -1,10 +1,10 @@
 parameters:
 
   # Configure the FatTail settings here
-  fattail.username: hearst.api
-  fattail.password: hearst123
+  fattail.username: 
+  fattail.password: 
   fattail.base_url: http://adserver.fattail.com/abn/ws/adbookconnect.svc?singleWsdl
-  fattail.report_name: ADTECH CD Report Copy
+  fattail.report_name: ADTECH CD Report
   fattail.api_namespace: http://www.FatTail.com/api
   fattail.api_version: 10
   fattail.overwrite: false #true will overwrite data on FatTail
