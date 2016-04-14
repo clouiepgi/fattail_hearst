@@ -287,7 +287,9 @@ class EdgeService {
 
             $last_record = $json->lastRecord;
             if($last_record == "")
-                    break;
+            {
+                break;
+            }
         } while ($last_record !== '');
 
         return $accounts;
@@ -385,8 +387,8 @@ class EdgeService {
             }
 
             $last_record = $json->lastRecord;
-            if($last_record == ""){
-                //print_r($json);
+            if($last_record == "")
+            {
                 break;
             }
         } while ($last_record !== '');
@@ -676,7 +678,6 @@ class EdgeService {
             $json = json_decode($http_response->getContent());
 
             if (!property_exists($json, 'items')) {
-
                 // No more items to process
                 break;
             }
@@ -803,7 +804,9 @@ class EdgeService {
 
                 $last_record = $json->lastRecord;
                 if($last_record == "")
+                {
                     break;
+                }
             } while ($last_record !== '');
 
             $this->cache->set_users($users);
