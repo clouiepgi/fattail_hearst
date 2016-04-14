@@ -14,5 +14,18 @@ parameters:
   auth.cd.client_id: 49c7dbf3-7acf-402f-81de-dffe03025b3b
   auth.cd.private_key: |
     -----BEGIN RSA PRIVATE KEY-----
-    
+    MIICdgIBADANBgkqhkiG9w0BAQEFAASCAmAwggJcAgEAAoGBAJae9JJ51349BPte
+    BUqMUiZBSMvBW7d5cXZ1Je4xWX+Wf0LYrPp2T7UU0oF8xTarK/hHwGoVjh4VXCyB
+    J8215tLTjBlXtJjJJX2JV+0ji3F70pW8SI1XQSYx/z1eP8GYDeXM8n7k+b1fdgOp
+    3n5QuAWpx9kZDYRrhUaqIdA9lXuTAgMBAAECgYA2zxDgXEX2Qe4WKlhykC00jn0W
+    5/2f/ikzmd17l6mhq/oTMRWA7pyCoFkZlXWONyuA5Vs3PzC/8bXg2/7H9HFRpzfU
+    65wCU0Q7C3uXNKOO+aSEYTcjaPqYPMaKRPbVQPBvsFF+fz2Da8iaKpoqAOv7PpbL
+    K3ifwNkX1CjOfpamgQJBANJ9+mqsQd33JjbtKLC5tVRCEv5Z6fRDIJSscJWhteHL
+    KL8JbN8CNHLRAz/wFKVkYt+PtDoirbrtz2mBryhUTZsCQQC3L0+U06IRq2V+qJHz
+    Qw3alL1rn8DXYJiOpsxREH8MKafVpe1YiatY5Hyky+0zNMLhYmBx+/q+ELeanjYh
+    IuVpAkBHgscloHoMJ+ASvwWY7K6e/oenY/KoqnmSKPdiznqVSEkChfg3127sJvg8
+    q5rICc/Rdefb7FYrcImLpaRVRjbLAkB3Pv8JHLM12WMajlVkC9Rq48Ri2P3JtoHY
+    6s+6PYjWvA8bTwYwSn4WQba5+F4SpVfvLAEociWJsIw0xKTr8TFxAkEArtgBEyoG
+    AYxI2LWKwWzFoZTay5BYcKs1mP1hMeEpcBXhItmswNdnIuZsxSg71wGq/T2oLyCj
+    DulGIzDUNfxzuQ==
     -----END RSA PRIVATE KEY-----
