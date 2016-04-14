@@ -1,5 +1,5 @@
 data
 tmp
 vendor
-config/cd_config.yml
-config/fattail_config.yml
+cd_config.yml
+fattail_config.yml
