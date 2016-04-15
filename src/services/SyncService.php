@@ -336,7 +336,8 @@ class SyncService {
                     $name,
                     $custom_fields
                 );
-            
+                $this->logger->info("Update an Existing Workspace.\n");
+                $this->logger->info(print_r($status));
                 if (!$status) {
                     $this->logger->warning(
                         "Failed to updated a workspace. Continuing."
