@@ -256,7 +256,7 @@ class EdgeService {
 
             $json = json_decode($http_response->getContent());
 
-            if (property_exists($json, 'items')) {
+            if (!empty($json) && property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
@@ -285,11 +285,7 @@ class EdgeService {
                 );
             }
 
-            $last_record = @$json->lastRecord;
-            if($last_record == "")
-            {
-                break;
-            }
+            $last_record = $json->lastRecord;
         } while ($last_record !== '');
 
         return $accounts;
@@ -351,7 +347,7 @@ class EdgeService {
             $http_response = $this->cd_get($path, $query_params);
 
             $json = json_decode($http_response->getContent());
-            if (property_exists($json, 'items')) {
+            if (!empty($json) && property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
@@ -386,11 +382,7 @@ class EdgeService {
                 );
             }
 
-            $last_record = @$json->lastRecord;
-            if($last_record == "")
-            {
-                break;
-            }
+            $last_record = $json->lastRecord;
         } while ($last_record !== '');
 
         return $workspaces;
@@ -521,7 +513,7 @@ class EdgeService {
 
             $json = json_decode($http_response->getContent());
 
-            if (!property_exists($json, 'items')) {
+            if (!empty($json) && !property_exists($json, 'items')) {
 
                 // No more items to process so exit
                 break;
@@ -677,7 +669,8 @@ class EdgeService {
             $http_response = $this->cd_get($path, $query_params);
             $json = json_decode($http_response->getContent());
 
-            if (!property_exists($json, 'items')) {
+            if (!empty($json) && !property_exists($json, 'items')) {
+
                 // No more items to process
                 break;
             }
@@ -792,7 +785,7 @@ class EdgeService {
                 $http_response = $this->cd_get($path, $query_params);
 
                 $json = json_decode($http_response->getContent());
-                if (property_exists($json, 'items')) {
+                if (!empty($json) && property_exists($json, 'items')) {
                     foreach ($json->items as $user) {
                         $name         = strtolower($user->details->fullName);
                         $users[$name] = $user->id;
@@ -802,11 +795,7 @@ class EdgeService {
                     break;
                 }
 
-                $last_record = @$json->lastRecord;
-                if($last_record == "")
-                {
-                    break;
-                }
+                $last_record = $json->lastRecord;
             } while ($last_record !== '');
 
             $this->cache->set_users($users);
