@@ -61,9 +61,15 @@ class EdgeClient {
 
         // Get URL and header information
         $url = $this->get_url($path, $query_params);
-        $headers = $this->get_headers([
+        $base_headers = [
             'Content-Type' => 'application/json'
-        ]);
+        ];
+        if (EdgeClient::METHOD_GET === $method) {
+            $base_headers = [
+                'Content-Type' => 'plain/text'
+            ];
+        }
+        $headers = $this->get_headers($base_headers);
         $content = json_encode($content_array);
 
         try {
