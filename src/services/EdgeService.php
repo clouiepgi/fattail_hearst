@@ -795,7 +795,7 @@ class EdgeService {
                     break;
                 }
 
-                $last_record = $json->lastRecord;
+                $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
             } while ($last_record !== '');
 
             $this->cache->set_users($users);
