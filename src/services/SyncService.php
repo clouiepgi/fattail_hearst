@@ -407,6 +407,32 @@ class SyncService {
                     'Account Manager'
                 );
             }
+            
+            // HDM Ad Studio
+            $order_data['hdm_ad_studio'] = array("Macgillis, Joe", "Mansour, Sam");
+            foreach($order_data['hdm_ad_studio'] as $name){
+              if (!empty($name)) {
+                $hdm_ad_studio = $this->format_name($name); 
+                $this->edge_service->assign_user_to_role(
+                    $hdm_ad_studio,
+                    $this->roles['hdm_ad_studio'],
+                    $cd_workspace->hash,
+                    'HDM Ad Studio'
+                );
+              }
+            }
+            
+            // Head of PM
+            $order_data['head_pm'] = "Keltz, Heather";
+            if (!empty($order_data['head_pm'])) {
+                $head_pm = $this->format_name($order_data['head_pm']);
+                $this->edge_service->assign_user_to_role(
+                    $head_pm,
+                    $this->roles['head_pm'],
+                    $cd_workspace->hash,
+                    'Head of PM'
+                );
+            }
         }
 
         return $cd_workspace;
@@ -604,6 +630,8 @@ class SyncService {
             $start_date,
             $end_date
         );
+        
+        //$csv_path = "/tmp/4071.csv";
         
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
