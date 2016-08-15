@@ -122,14 +122,11 @@ class SyncService {
 
             $row = $rows[$i];
 
-            if (
-                strpos($row[$col_map['Position Path']], 'HDM') === false ||
-                strtolower($row[$col_map['(Drop) Custom Unit']]) != "true" ||
-                strtotime($row[$col_map['Last Changed On']]) < strtotime('-3 days')
-            ) {
-
-                // Skip Non HDM items, custom, and any items not updated in the past
-                // 3 days
+            if ($this->filter_row($row)) {
+                $this->logger->info('Skipping item', [
+                    'Drop ID'   => $row[$col_map['Drop ID']],
+                    'Drop Name' => $row[$col_map['Position Path']],
+                ]);
                 continue;
             }
 
@@ -138,9 +135,6 @@ class SyncService {
             try {
 
 
-                // Get drop details
-                $drop_id = $row[$col_map['Drop ID']];
-                $drop = $this->fattail_service->get_drop_by_id($drop_id);
             }
             catch (\Exception $e) {
                 continue;
@@ -206,23 +200,25 @@ class SyncService {
             }
 
             // Process the drop
-
-            $package_drop_id = $row[$col_map['Package Drop ID']];
-            if (!empty($package_drop_id)) {
-                $drop->ParentDropID = $package_drop_id;
-            }
-            $milestone_data = [
-                'name'                   => $row[$col_map['Position Path']],
-                'description'            => $row[$col_map['Drop Description']],
-                'start_date'             => $row[$col_map['Start Date']],
-                'end_date'               => $row[$col_map['End Date']],
-                'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
-                'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
-                'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
-                'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']]
-            ];
-
             try {
+                // Get drop details
+                $drop_id = $row[$col_map['Drop ID']];
+                $drop = $this->fattail_service->get_drop_by_id($drop_id);
+
+                $package_drop_id = $row[$col_map['Package Drop ID']];
+                if (!empty($package_drop_id)) {
+                    $drop->ParentDropID = $package_drop_id;
+                }
+                $milestone_data = [
+                    'name'                   => $row[$col_map['Position Path']],
+                    'description'            => $row[$col_map['Drop Description']],
+                    'start_date'             => $row[$col_map['Start Date']],
+                    'end_date'               => $row[$col_map['End Date']],
+                    'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
+                    'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
+                    'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
+                    'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']]
+                ];
 
                 $cd_milestone = $this->sync_drop(
                     $drop,
@@ -235,7 +231,7 @@ class SyncService {
 
                 $this->logger->error(
                     'Failed to sync drop. Continuing.',
-                    ['Drop ID' => $drop->DropID]
+                    ['Drop ID' => $drop_id]
                 );
 
                 continue;
@@ -646,5 +642,19 @@ class SyncService {
         $name_parts = explode(', ', $name);
 
         return strtolower($name_parts[1] . ' ' . $name_parts[0]);
+    }
+
+
+    /**
+     * Determines whether to filter out a row. Returns true
+     * if row should be filtered out (not processed), false otherwise.
+     * @param array $row
+     * @return bool
+     */
+    private
+    function filter_row(array $row) {
+
+        // Implement your own logic on what rows to filter here
+        return false;
     }
 }
