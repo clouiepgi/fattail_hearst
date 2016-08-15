@@ -3,12 +3,57 @@
 namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
+use PhpOption\None;
+use PhpOption\Option;
 
 class SyncCache {
 
     private $accounts           = null;
     private $users              = null;
+    private $clients            = null;
+    private $orders             = [];
     private $tasklist_templates = [];
+
+    /**
+     * Sets the FatTail clients
+     * @param array $clients
+     */
+    public
+    function set_clients(array $clients = []) {
+        $this->clients = $clients;
+    }
+
+    /**
+     * Gets a client by id.
+     * @param $id
+     */
+    public
+    function get_client($id) {
+        if (!$this->clients || count($this->clients)) {
+            return None::create();
+        }
+
+        return Option::fromValue($this->clients[$id]);
+    }
+
+    /**
+     * Adds an order to the cache.
+     * @param $order
+     */
+    public
+    function add_order($order) {
+        $this->orders[$order->OrderID] = $order;
+    }
+
+    /**
+     * Gets an order from cache.
+     * @param $id
+     * @return Option
+     */
+    public
+    function get_order($id) {
+        return Option::fromValue($this->orders[$id]);
+    }
 
     /**
      * Sets the accounts.
@@ -16,7 +61,7 @@ class SyncCache {
      * @param $accounts An array of Accounts.
      */
     public
-    function set_accounts($accounts) {
+    function set_accounts(array $accounts = []) {
 
         $this->accounts = $accounts;
     }

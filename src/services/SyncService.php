@@ -9,9 +9,13 @@
 
 namespace CentralDesktop\FatTail\Services;
 
+use CentralDesktop\FatTail\Entities\Account;
 use JmesPath;
 use League\Csv\Reader;
+use PhpCollection\Sequence;
+use PhpOption\Option;
 use Psr\Log\LoggerAwareTrait;
+use stdClass;
 
 class SyncService {
     use LoggerAwareTrait;
@@ -132,13 +136,7 @@ class SyncService {
             $this->logger->info("Processing next item. Please wait.");
 
             try {
-                // Get client details
-                $client_id = $row[$col_map['Client ID']];
-                $client = $this->fattail_service->get_client_by_id($client_id);
 
-                // Get order details
-                $order_id = $row[$col_map['Campaign ID']];
-                $order = $this->fattail_service->get_order_by_id($order_id);
 
                 // Get drop details
                 $drop_id = $row[$col_map['Drop ID']];
@@ -149,15 +147,22 @@ class SyncService {
             }
 
             // Process the client
+            // Get client details
+            $client_id = $row[$col_map['Client ID']];
             try {
+                $cd_account = $this->cache->get_client($client_id)
+                    ->orElse(Option::fromValue($this->fattail_service->get_client_by_id($client_id)))
+                    ->map(function($client) {
+                        return $this->sync_client($client);
+                    })
+                    ->getOrThrow(new \Exception());
 
-                $cd_account = $this->sync_client($client);
             }
             catch (\Exception $e) {
 
                 $this->logger->error(
                     'Failed to sync client. Skipping the workspace and milestone.',
-                    ['Client ID' => $client->ClientID]
+                    ['Client ID' => $client_id]
                 );
 
                 continue;
@@ -174,20 +179,27 @@ class SyncService {
                 'hdm_pm'                => $row[$col_map['HDM | Project Manager']]
             ];
 
+            $order_id = $row[$col_map['Campaign ID']];
             try {
-
-                $cd_workspace = $this->sync_order(
-                    $order,
-                    $cd_account,
-                    $order_data,
-                    $order_workspace_property_id
-                );
+                // Get order details
+                $cd_workspace = $this->cache->get_order($order_id)
+                    ->orElse(Option::fromValue($this->fattail_service->get_order_by_id($order_id)))
+                    ->map(function($order) use ($cd_account, $order_data, $order_workspace_property_id) {
+                        $this->cache->add_order($order);
+                        return $this->sync_order(
+                            $order,
+                            $cd_account,
+                            $order_data,
+                            $order_workspace_property_id
+                        );
+                    })
+                    ->getOrThrow(new \Exception());
             }
             catch (\Exception $e) {
 
                 $this->logger->error(
                     'Failed to sync order. Skipping the milestone.',
-                    ['Order ID' => $order->OrderID]
+                    ['Order ID' => $order_id]
                 );
 
                 continue;
@@ -369,6 +381,14 @@ class SyncService {
     private
     function prepare_cache() {
 
+        // Fetch all FatTail clients into an associative array by client id for easy lookup
+        $fattail_clients = (new Sequence($this->fattail_service->get_clients()))
+            ->foldLeft([], function($clients, $client) {
+                $clients[$client->ClientID] = $client;
+                return $clients;
+            });
+        $this->cache->set_clients($fattail_clients);
+
         // Populate a local copy of CD accounts, workspace, and milestones
         $this->cache->set_accounts(array_map(function ($account) {
 
@@ -432,10 +452,10 @@ class SyncService {
     /**
      * Syncs a FatTail order with CD.
      *
-     * @param $order The FatTail order.
-     * @param $cd_account The Account the workspace will be under.
-     * @param $order_data The FatTail order data.
-     * @param $order_workspace_property_id The dynamic property id of
+     * @param $order stdClass The FatTail order.
+     * @param $cd_account Account The Account the workspace will be under.
+     * @param $order_data array The FatTail order data.
+     * @param $order_workspace_property_id integer The dynamic property id of
      *                                     the FatTail order.
      * @return A Workspace representing the CD workspace
      */

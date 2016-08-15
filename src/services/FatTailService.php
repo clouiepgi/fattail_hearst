@@ -120,6 +120,13 @@ class FatTailService {
         return $report_url_result->GetReportDownloadURLResult;
     }
 
+    public
+    function get_clients() {
+        return $this->client->call(
+            'GetClientList'
+        )->GetClientListResult->Client;
+    }
+
     /**
      * Queries FatTail for a client by its id.
      *
@@ -229,8 +236,8 @@ class FatTailService {
      * Finds and returns the id of the order dynamic property
      * in FatTail.
      *
-     * @param $name The name of the order dynamic property.
-     * @return The order dynamic property id if found, else null
+     * @param $name string name of the order dynamic property.
+     * @return integer order dynamic property id if found, else null
      */
     public
     function get_order_dynamic_property_id($name) {
