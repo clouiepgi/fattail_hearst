@@ -22,6 +22,7 @@
     "osucomm/ws-soap":              "^0.1.0",
     "kriswallsmith/buzz":           "^0.15",
     "mtdowling/jmespath.php":       "^2.2.0",
+    "phpcollection/phpcollection":  "0.5.*",
     "phpoption/phpoption":          "1.5.*"
   },
   "replace": {
