@@ -67,7 +67,7 @@ class FatTailService {
         // Get individual report details
         return $this->client->call(
             'GetSavedReportQuery',
-            [ 'savedReportId' => $report_id ]
+            $this->array_to_object([ 'savedReportId' => $report_id ])
         )->GetSavedReportQueryResult;
     }
 
@@ -82,7 +82,7 @@ class FatTailService {
 
         $run_report_job = $this->client->call(
             'RunReportJob',
-            ['reportJob' => $report_job]
+            $this->array_to_object(['reportJob' => $report_job])
         )->RunReportJobResult;
 
         return $run_report_job->ReportJobID;
@@ -99,7 +99,7 @@ class FatTailService {
 
         return $this->client->call(
             'GetReportJob',
-            ['reportJobId' => $job_id]
+            $this->array_to_object(['reportJobId' => $job_id])
         )->GetReportJobResult;
     }
 
@@ -114,7 +114,7 @@ class FatTailService {
 
         $report_url_result = $this->client->call(
             'GetReportDownloadUrl',
-            ['reportJobId' => $job_id]
+            $this->array_to_object(['reportJobId' => $job_id])
         );
 
         return $report_url_result->GetReportDownloadURLResult;
@@ -132,7 +132,7 @@ class FatTailService {
 
         return $this->client->call(
             'GetClient',
-            ['clientId' => $client_id]
+            $this->array_to_object(['clientId' => $client_id])
         )->GetClientResult;
     }
 
@@ -148,7 +148,7 @@ class FatTailService {
 
         return $this->client->call(
             'GetOrder',
-            ['orderId' => $order_id]
+            $this->array_to_object(['orderId' => $order_id])
         )->GetOrderResult;
     }
 
@@ -164,7 +164,7 @@ class FatTailService {
 
         return $this->client->call(
             'GetDrop',
-            ['dropId' => $drop_id]
+            $this->array_to_object(['dropId' => $drop_id])
         )->GetDropResult;
     }
 
@@ -180,7 +180,7 @@ class FatTailService {
 
         return $this->client->call(
             'UpdateClient',
-            ['client' => $client]
+            $this->array_to_object(['client' => $client])
         );
     }
 
@@ -196,7 +196,7 @@ class FatTailService {
 
         return $this->client->call(
             'UpdateOrder',
-            ['order' => $order]
+            $this->array_to_object(['order' => $order])
         );
     }
 
@@ -221,7 +221,7 @@ class FatTailService {
 
         return $this->client->call(
             $method,
-            $parameters
+            $this->array_to_object($parameters)
         );
     }
 
@@ -299,7 +299,6 @@ class FatTailService {
         }
 
         if (!$found) {
-
             $property = new \stdClass();
             $property->DynamicPropertyID = $id;
             $property->Value = $value;
@@ -307,5 +306,16 @@ class FatTailService {
         }
 
         return $properties;
+    }
+
+    /**
+     * Converts an array and sub arrays to objects.
+     *
+     * @param array $array
+     * @return mixed
+     */
+    private
+    function array_to_object(array $array = []) {
+        return json_decode(json_encode($array), false);
     }
 }

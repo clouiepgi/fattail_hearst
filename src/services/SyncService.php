@@ -26,7 +26,7 @@ class SyncService {
     private $WORKSPACE_DYNAMIC_PROP_NAME = 'H_CD_Workspace_ID';
     private $MILESTONE_DYNAMIC_PROP_NAME = 'H_CD_Milestone_ID';
 
-    private $tmp_dir                  = 'tmp/';
+    private $tmp_dir                  = __DIR__ . '/../../tmp/';
     private $workspace_template_hash  = 'pm';
     private $roles                    = [];
     private $tasklist_templates       = [];
@@ -83,7 +83,7 @@ class SyncService {
             $this->tmp_dir,
             $start_date,
             $end_date
-        );
+        );exit;
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
