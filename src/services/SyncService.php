@@ -83,7 +83,7 @@ class SyncService {
             $this->tmp_dir,
             $start_date,
             $end_date
-        );exit;
+        );
         $reader = Reader::createFromPath($csv_path);
         $rows = $reader->fetchAll();
 
