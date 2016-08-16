@@ -135,14 +135,6 @@ class SyncService {
 
             $this->logger->info("Processing next item. Please wait.");
 
-            try {
-
-
-            }
-            catch (\Exception $e) {
-                continue;
-            }
-
             // Process the client
             // Get client details
             $client_id = $row[$col_map['Client ID']];
