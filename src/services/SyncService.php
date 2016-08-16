@@ -146,7 +146,7 @@ class SyncService {
             try {
                 $cd_account = $this->cache->get_client($client_id)
                     ->orElse(Option::fromValue($this->fattail_service->get_client_by_id($client_id)))
-                    ->map(function($client) {
+                    ->flatMap(function($client) {
                         return $this->sync_client($client);
                     })
                     ->getOrThrow(new \Exception());
@@ -415,31 +415,30 @@ class SyncService {
     function sync_client($client) {
 
         // Process the client
+        $custom_fields = [
+            'c_client_id' => $client->ClientID
+        ];
         $cd_account = $this->cache->find_account_by_c_client_id(
             $client->ClientID
-        );
-        if ($cd_account === null) {
-            // Create a new CD Account
-            $custom_fields = [
-                'c_client_id' => $client->ClientID
-            ];
-            $cd_account = $this->edge_service->create_cd_account(
-                $client->Name,
-                $custom_fields
-            );
-
-            $this->cache->add_account($cd_account);
-        }
+        )
+        // Try fetching by hash
+        ->orElse($this->edge_service->get_cd_account($client->ExternalID))
+        // Create a new CD Account
+        ->orElse($this->edge_service->create_cd_account(
+            $client->Name,
+            $custom_fields
+        ))
+        ->forAll(function(Account $account) {
+            $this->cache->add_account($account);
+        });
 
         if ($this->fattail_overwrite || $client->ExternalID === '') {
-            // Update the FatTail client external id
-            // if it doesn't have a value
-            $client->ExternalID = $cd_account->hash;
-
-            // Update the FatTail Client with the
-            // CD Account hash
-
-            $this->fattail_service->update_client($client);
+            $cd_account->forAll(function(Account $account) use ($client) {
+                // Update the FatTail client external id
+                // if it doesn't have a value
+                $client->ExternalID = $account->hash;
+                $this->fattail_service->update_client($client);
+            });
         }
 
         return $cd_account;

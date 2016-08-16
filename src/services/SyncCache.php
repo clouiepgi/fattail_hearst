@@ -102,17 +102,17 @@ class SyncCache {
     /**
      * Finds an Account by the FatTail client id.
      *
-     * @param $c_client_id The FatTail client id.
-     * @return The account with $c_client_id or null if not found.
+     * @param $c_client_id integer The FatTail client id.
+     * @return Option The account with $c_client_id or null if not found.
      */
     public
     function find_account_by_c_client_id($c_client_id) {
 
         if (array_key_exists($c_client_id, $this->accounts)) {
-            return $this->accounts[$c_client_id];
+            return Option::fromValue($this->accounts[$c_client_id]);
         }
 
-        return null;
+        return None::create();
     }
 
     /**

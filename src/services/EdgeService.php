@@ -11,6 +11,8 @@ use CentralDesktop\FatTail\Services\Client\EdgeClient;
 
 use DateTime;
 use JmesPath;
+use PhpOption\None;
+use PhpOption\Option;
 use Psr\Log\LoggerAwareTrait;
 
 class EdgeService {
@@ -30,10 +32,10 @@ class EdgeService {
     /**
      * Creates an account on CD.
      *
-     * @param $name The account name.
-     * @param $custom_fields An array of custom fields.
+     * @param $name string The account name.
+     * @param $custom_fields array An array of custom fields.
      *
-     * @returns A new Account
+     * @returns Option A new Account
      */
     public
     function create_cd_account($name, $custom_fields = []) {
@@ -47,6 +49,14 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if ($http_response->getStatusCode() !== 201) {
+            $this->logger->error('Failed to create iMeetCentral account', [
+                'name' => $name
+            ]);
+
+            return None::create();
+        }
+
         $account_hash = $http_response->getContent();
 
         $account = new Account(
@@ -54,7 +64,7 @@ class EdgeService {
             $custom_fields['c_client_id']
         );
 
-        return $account;
+        return Option::fromValue($account);
     }
 
     /**
@@ -178,6 +188,35 @@ class EdgeService {
     }
 
     /**
+     * Gets a CD account with hash.
+     *
+     * @param $hash string
+     * @return Option The account
+     */
+    public
+    function get_cd_account($hash) {
+
+        $path = "accounts/$hash";
+
+        $http_response = $this->cd_get($path, []);
+
+        if ($http_response->getStatusCode() === 200) {
+            $account_data = json_decode($http_response->getContent());
+            if (property_exists($account_data->details, 'customFields')) {
+
+                $c_client_id = JmesPath\Env::search(
+                    "customFields[?fieldApiId=='c_client_id'].value | [0]",
+                    $account_data->details
+                );
+            }
+
+            return Option::fromValue(new Account($account_data->id, $c_client_id));
+        }
+
+        return None::create();
+    }
+
+    /**
      * Gets all the cd accounts.
      *
      * @return An array of Accounts.
@@ -199,9 +238,19 @@ class EdgeService {
 
             $http_response = $this->cd_get($path, $query_params);
 
+            if ($http_response->getStatusCode() !== 200) {
+                // Log and return the accounts we've processed if there is an error
+                // trying to get them
+                $this->logger->error('Failed to retrieve iMeetCentral accounts', [
+                    'message' => $http_response->getContent()
+                ]);
+
+                return $accounts;
+            }
+
             $json = json_decode($http_response->getContent());
 
-            if (property_exists($json, 'items')) {
+            if (!empty($json) && !property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
@@ -259,8 +308,19 @@ class EdgeService {
 
             $http_response = $this->cd_get($path, $query_params);
 
+            if ($http_response->getStatusCode() !== 200) {
+                // Log and return the workspaces we've processed if there is an error
+                // trying to get them
+                $this->logger->error('Failed to retrieve iMeetCentral workspaces', [
+                    'message'      => $http_response->getContent(),
+                    'account hash' => $account_hash
+                ]);
+
+                return $workspaces;
+            }
+
             $json = json_decode($http_response->getContent());
-            if (property_exists($json, 'items')) {
+            if (!empty($json) && property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
@@ -323,8 +383,19 @@ class EdgeService {
 
             $http_response = $this->cd_get($path, $query_params);
 
+            if ($http_response->getStatusCode() !== 200) {
+                // Log and return the workspaces we've processed if there is an error
+                // trying to get them
+                $this->logger->error('Failed to retrieve iMeetCentral milestones', [
+                    'message'      => $http_response->getContent(),
+                    'workspace hash' => $workspace_hash
+                ]);
+
+                return $milestones;
+            }
+
             $json = json_decode($http_response->getContent());
-            if ($json && property_exists($json, 'items')) {
+            if (!empty($json) && property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
@@ -615,7 +686,7 @@ class EdgeService {
      * @param $path The path for the resource
      * @param $query_params An array/object representing the entity data
      *
-     * @return A Psr\Http\Message\ResponseInterface object
+     * @return Psr\Http\Message\ResponseInterface object
      */
     protected
     function cd_get($path, $query_params) {
