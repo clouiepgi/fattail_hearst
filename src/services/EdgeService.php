@@ -355,7 +355,7 @@ class EdgeService {
 
         $workspaces  = [];
         $last_record = '';
-        $path        = 'accounts/' . $account_hash . '/workspaces';
+        $path        = 'accounts/' . $account_hash . '/companyWorkspaces';
 
         do {
 
