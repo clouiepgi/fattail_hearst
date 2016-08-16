@@ -180,6 +180,16 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if ($http_response !== 201) {
+            $this->logger->error('Failed to create iMeetCentral milestone', [
+                'name'          => $name,
+                'custom_fields' => $custom_fields,
+                'message'       => $http_response->getContent()
+            ]);
+
+            return None::create();
+        }
+
         $milestone_hash = $http_response->getContent();
 
         $milestone = new Milestone(
@@ -224,6 +234,14 @@ class EdgeService {
         $path = 'milestones/' . $milestone_id . '/updateDetail';
 
         $http_response = $this->cd_post($path, $details);
+
+        if (!$http_response->isSuccessful()) {
+            $this->logger->error('Failed to update milestone', [
+                'milestone_id'  => $milestone_id,
+                'name'          => $name,
+                'custom_fields' => $custom_fields
+            ]);
+        }
 
         return $http_response->isSuccessful();
     }
