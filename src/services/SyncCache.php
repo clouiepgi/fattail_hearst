@@ -3,6 +3,7 @@
 namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
+use CentralDesktop\FatTail\Entities\Milestone;
 use CentralDesktop\FatTail\Entities\TasklistTemplate;
 use CentralDesktop\FatTail\Entities\Workspace;
 use PhpCollection\Sequence;
@@ -13,6 +14,7 @@ class SyncCache {
 
     private $accounts           = [];
     private $workspaces         = [];
+    private $milestones         = [];
     private $users              = [];
     private $clients            = [];
     private $orders             = [];
@@ -190,5 +192,27 @@ class SyncCache {
             return None::create();
         }
         return Option::fromValue($this->workspaces[$order_id]);
+    }
+
+    /**
+     * Adds a milestone to the cache and hashes it by its drop id.
+     * @param Milestone $milestone
+     */
+    public
+    function add_milestone(Milestone $milestone) {
+        $this->milestones[$milestone->c_drop_id] = $milestone;
+    }
+
+    /**
+     * Fines a workspace by its drop id.
+     * @param $drop_id
+     * @return None|Option
+     */
+    public
+    function get_milestone_by_drop_id($drop_id) {
+        if (!isset($this->milestones[$drop_id])) {
+            return None::create();
+        }
+        return Option::fromValue($this->milestones[$drop_id]);
     }
 }

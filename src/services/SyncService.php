@@ -569,9 +569,24 @@ class SyncService {
         $drop_milestone_property_id
     ) {
 
-        $cd_milestone = $cd_workspace->find_milestone_by_c_drop_id(
-            $drop->DropID
-        );
+        // Try finding it in the cache
+        $cd_milestone = $this->cache->get_milestone_by_drop_id($drop->DropID);
+
+        if ($cd_milestone->isEmpty()) {
+            // Try finding it by hash through Edge
+            $cd_milestone = $this->edge_service->get_cd_milestone($drop_data['milestone_id']);
+        }
+
+        if ($cd_milestone->isEmpty()) {
+            // Couldn't find it in cache or by iMC API hash so try searching under parent space
+            foreach ($this->edge_service->get_cd_milestones($cd_workspace->hash) as $milestone) {
+                /* @var $milestone Milestone */
+                $this->cache->add_milestone($milestone);
+            }
+
+            $cd_milestone = $this->cache->get_milestone_by_drop_id($drop->DropID);
+        }
+
         $custom_fields = [
             'c_drop_id'              => $drop->DropID,
             'c_custom_unit_features' => $drop_data['c_custom_unit_features'],
@@ -579,7 +594,7 @@ class SyncService {
             'c_drop_cost_new'        => $drop_data['c_drop_cost_new']
         ];
         $milestone_name = $drop_data['name'] . '-' . $drop->DropID;
-        if ($cd_milestone === null) {
+        if ($cd_milestone->isEmpty()) {
 
             $cd_milestone = $this->edge_service->create_cd_milestone(
                 $cd_workspace->hash,
@@ -588,22 +603,23 @@ class SyncService {
                 $drop_data['start_date'],
                 $drop_data['end_date'],
                 $custom_fields
-            );
-
-            if ($cd_milestone) {
-                $cd_workspace->add_milestone($cd_milestone);
-            }
+            )
+            ->forAll(function(Milestone $milestone) {
+                $this->cache->add_milestone($milestone);
+            });
         }
         else {
+            $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
 
-            $status = $this->edge_service->update_cd_milestone(
-                $cd_milestone->hash,
-                $milestone_name,
-                $drop_data['description'],
-                $drop_data['start_date'],
-                $drop_data['end_date'],
-                $custom_fields
-            );
+                return $this->edge_service->update_cd_milestone(
+                    $milestone->hash,
+                    $milestone_name,
+                    $drop_data['description'],
+                    $drop_data['start_date'],
+                    $drop_data['end_date'],
+                    $custom_fields
+                );
+            })->getOrElse(false);
 
             if (!$status) {
                 $this->logger->warning(
@@ -620,21 +636,24 @@ class SyncService {
         $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
             $this->tasklist_templates[$drop_type] : [];
 
-        if (($this->fattail_overwrite || $drop_data['milestone_id'] === '') && $cd_milestone) {
+        if (($this->fattail_overwrite || $drop_data['milestone_id'] === '')) {
 
-            // Only need to update Drop DynamicPropertyValue
-            // if it doesn't have one
-            $dynamic_properties = $drop
-                ->DropDynamicProperties
-                ->DynamicPropertyValue;
-            $drop->DropDynamicProperties->DynamicPropertyValue =
-                $this->fattail_service->update_dynamic_properties(
-                    $dynamic_properties,
-                    $drop_milestone_property_id,
-                    $cd_milestone->hash
-                );
+            $cd_milestone->flatMap(function(Milestone $milestone) use ($drop, $drop_milestone_property_id) {
 
-            $this->fattail_service->update_drop($drop);
+                // Only need to update Drop DynamicPropertyValue
+                // if it doesn't have one
+                $dynamic_properties = $drop
+                    ->DropDynamicProperties
+                    ->DynamicPropertyValue;
+                $drop->DropDynamicProperties->DynamicPropertyValue =
+                    $this->fattail_service->update_dynamic_properties(
+                        $dynamic_properties,
+                        $drop_milestone_property_id,
+                        $milestone->hash
+                    );
+
+                $this->fattail_service->update_drop($drop);
+            });
         }
 
         return $cd_milestone;

@@ -165,7 +165,7 @@ class EdgeService {
      * @param $end_date string The end date of the milestone.
      * @param $custom_fields array An array of custom fields.
      *
-     * @return Milestone A new Milestone.
+     * @return Option A new Milestone.
      */
     public
     function create_cd_milestone(
@@ -201,7 +201,7 @@ class EdgeService {
                 'message'       => $http_response->getContent()
             ]);
 
-            return null;
+            return None::create();
         }
 
         $milestone_hash = $http_response->getContent();
@@ -211,7 +211,7 @@ class EdgeService {
             $custom_fields['c_drop_id']
         );
 
-        return $milestone;
+        return Option::fromValue($milestone);
     }
 
     /**
@@ -436,6 +436,35 @@ class EdgeService {
         } while ($last_record !== '');
 
         return $workspaces;
+    }
+
+    /**
+     * Gets a milestone.
+     *
+     * @param $milestone_hash string The milestone hash
+     * @return Option The milestone
+     */
+    public
+    function get_cd_milestone($milestone_hash) {
+
+        $path = "milestones/$milestone_hash";
+
+        $http_response = $this->cd_get($path, []);
+
+        if ($http_response->getStatusCode() === 200) {
+            $milestone_data = json_decode($http_response->getContent());
+            if (property_exists($milestone_data->details, 'customFields')) {
+
+                $c_drop_id = JmesPath\Env::search(
+                    "customFields[?fieldApiId=='c_drop_id'].value | [0]",
+                    $milestone_data->details
+                );
+            }
+
+            return Option::fromValue(new Milestone($milestone_data->id, $c_drop_id));
+        }
+
+        return None::create();
     }
 
     /**
