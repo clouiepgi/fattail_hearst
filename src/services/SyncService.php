@@ -14,7 +14,6 @@ use CentralDesktop\FatTail\Entities\Milestone;
 use CentralDesktop\FatTail\Entities\Workspace;
 use JmesPath;
 use League\Csv\Reader;
-use PhpCollection\Sequence;
 use PhpOption\Option;
 use Psr\Log\LoggerAwareTrait;
 use stdClass;
@@ -124,6 +123,11 @@ class SyncService {
         for ($i = 1, $len = count($rows); $i < $len; $i++) {
 
             $row = $rows[$i];
+
+            if (count($rows) === 1) {
+                // Skip empty rows
+                continue;
+            }
 
             if ($this->filter_row($row)) {
                 $this->logger->info('Skipping item', [
