@@ -38,7 +38,7 @@ class SyncCache {
      */
     public
     function get_client($id) {
-        if (!$this->clients || count($this->clients)) {
+        if (!isset($this->clients[$id])) {
             return None::create();
         }
 
@@ -61,6 +61,9 @@ class SyncCache {
      */
     public
     function get_order($id) {
+        if (!isset($this->orders[$id])) {
+            return None::create();
+        }
         return Option::fromValue($this->orders[$id]);
     }
 
@@ -183,6 +186,9 @@ class SyncCache {
      */
     public
     function get_workspace_by_order_id($order_id) {
+        if (!isset($this->workspaces[$order_id])) {
+            return None::create();
+        }
         return Option::fromValue($this->workspaces[$order_id]);
     }
 }

@@ -377,11 +377,14 @@ class SyncService {
      */
     private
     function prepare_cache() {
+        $this->logger->info('Starting to prepare cache');
 
         // Fetch all FatTail clients into an associative array by client id for easy lookup
+        $this->logger->info('Caching FatTail clients');
         $this->cache->set_clients($this->fattail_service->get_clients());
 
         // Only need to cache accounts and workspaces since they're repeated
+        $this->logger->info('Caching iMeetCentral accounts and workspaces');
         $workspaces = [];
         $accounts = $this->edge_service->get_cd_accounts();
         foreach ($accounts as $account) {
@@ -390,9 +393,12 @@ class SyncService {
         $this->cache->set_workspaces($workspaces);
         $this->cache->set_accounts($accounts);
 
+        $this->logger->info('Caching iMeetCentral task list templates');
         $this->cache->set_tasklist_templates(
             $this->edge_service->get_cd_tasklist_templates()
         );
+
+        $this->logger->info('Finished preparing cache');
     }
 
     /**

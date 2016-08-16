@@ -338,7 +338,7 @@ class EdgeService {
                 );
             }
 
-            $last_record = $json->lastRecord;
+            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
         } while ($last_record !== '');
 
         return $accounts;
@@ -413,7 +413,7 @@ class EdgeService {
                 );
             }
 
-            $last_record = $json->lastRecord;
+            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
         } while ($last_record !== '');
 
         return $workspaces;
@@ -489,15 +489,7 @@ class EdgeService {
 
             }
 
-            // For some reason the lastRecord
-            // field doesn't exists when lastRecord is empty
-            // unlike the other endpoints
-            if (property_exists($json, 'lastRecord')) {
-                $last_record = $json->lastRecord;
-            }
-            else {
-                break;
-            }
+            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
         } while($last_record !== '');
 
         return $milestones;
@@ -544,12 +536,7 @@ class EdgeService {
                 $tasklists[$tasklist->name] = $tasklist;
             }
 
-            if (property_exists($json, 'lastRecord') && !empty($json->lastRecord)) {
-                $last_record = $json->lastRecord;
-            }
-            else {
-                $last_record = '';
-            }
+            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
         } while (!empty($last_record));
 
         return $tasklists;
