@@ -187,7 +187,7 @@ class EdgeService {
                 'message'       => $http_response->getContent()
             ]);
 
-            return None::create();
+            return null;
         }
 
         $milestone_hash = $http_response->getContent();

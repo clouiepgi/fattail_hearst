@@ -578,7 +578,9 @@ class SyncService {
                 $custom_fields
             );
 
-            $cd_workspace->add_milestone($cd_milestone);
+            if ($cd_milestone) {
+                $cd_workspace->add_milestone($cd_milestone);
+            }
         }
         else {
 
@@ -606,7 +608,7 @@ class SyncService {
         $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
             $this->tasklist_templates[$drop_type] : [];
 
-        if ($this->fattail_overwrite || ['milestone_id'] === '') {
+        if (($this->fattail_overwrite || $drop_data['milestone_id'] === '') && $cd_milestone) {
 
             // Only need to update Drop DynamicPropertyValue
             // if it doesn't have one
