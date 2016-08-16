@@ -416,15 +416,20 @@ class SyncService {
         ];
         $cd_account = $this->cache->find_account_by_c_client_id(
             $client->ClientID
-        )
-        // Try fetching by hash from iMC API
-        ->orElse($this->edge_service->get_cd_account($client->ExternalID))
-        // Create a new CD Account if we couldn't find an account
-        ->orElse($this->edge_service->create_cd_account(
-            $client->Name,
-            $custom_fields
-        ))
-        ->forAll(function(Account $account) {
+        );
+        if ($cd_account->isEmpty()) {
+            // Try fetching by hash from iMC API
+            $cd_account = $this->edge_service->get_cd_account($client->ExternalID);
+        }
+        if ($cd_account->isEmpty()) {
+            // Create a new CD Account if we couldn't find an account
+            $cd_account = $this->edge_service->create_cd_account(
+                $client->Name,
+                $custom_fields
+            );
+        }
+
+        $cd_account->forAll(function(Account $account) {
             $this->cache->add_account($account);
         });
 
@@ -468,30 +473,33 @@ class SyncService {
             'c_campaign_start_date' => $order_data['c_campaign_start_date'],
             'c_campaign_end_date'   => $order_data['c_campaign_end_date']
         ];
-        $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID)
+        $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID);
             // Couldn't find it in cache so try to fetch it from iMC by hash
-            ->orElse($this->edge_service->get_cd_workspace($order_data['workspace_id']));
-
-        // Couldn't find it in cache or by iMC API hash so try searching under parent account
-        $cd_workspace->getOrCall(function() use ($cd_account, $order) {
+        if ($cd_workspace->isEmpty()) {
+            $cd_workspace = $this->edge_service->get_cd_workspace($order_data['workspace_id']);
+        }
+        if ($cd_workspace->isEmpty()) {
+            // Couldn't find it in cache or by iMC API hash so try searching under parent account
             foreach ($this->edge_service->get_cd_workspaces($cd_account->hash) as $workspace) {
                 /* @var $workspace Workspace */
                 $this->cache->add_workspace($workspace);
             }
 
-            return Option::fromValue($this->cache->get_workspace_by_order_id($order->OrderID));
-        });
-
-        // Couldn't find a workspace so create it
-        $cd_workspace->orElse($this->edge_service->create_cd_workspace(
+            $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID);
+        }
+        if ($cd_workspace->isEmpty()) {
+            // Couldn't find a workspace so create it
+            $cd_workspace = $this->edge_service->create_cd_workspace(
                 $cd_account->hash,
                 $name,
                 $this->workspace_template_hash,
                 $custom_fields
-            ))
-            ->forAll(function(Workspace $workspace) use (&$cd_account) {
-                $this->cache->add_workspace($workspace);
-            });
+            );
+        }
+
+        $cd_workspace->forAll(function(Workspace $workspace) use (&$cd_account) {
+            $this->cache->add_workspace($workspace);
+        });
 
         if ($this->fattail_overwrite || $order_data['workspace_id'] === '') {
 
