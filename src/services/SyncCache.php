@@ -3,6 +3,7 @@
 namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
+use CentralDesktop\FatTail\Entities\TasklistTemplate;
 use PhpOption\None;
 use PhpOption\Option;
 
@@ -26,7 +27,8 @@ class SyncCache {
 
     /**
      * Gets a client by id.
-     * @param $id
+     * @param $id integer
+     * @return Option The client with $id
      */
     public
     function get_client($id) {
@@ -59,7 +61,7 @@ class SyncCache {
     /**
      * Sets the accounts.
      *
-     * @param $accounts An array of Accounts.
+     * @param $accounts array An array of Accounts.
      */
     public
     function set_accounts(array $accounts = []) {
@@ -70,7 +72,7 @@ class SyncCache {
     /**
      * Sets the users.
      *
-     * @param $users An array of Users.
+     * @param $users array An array of Users.
      */
     public
     function set_users($users) {
@@ -81,7 +83,7 @@ class SyncCache {
     /**
      * Returns the array of users.
      *
-     * @return An array of Users.
+     * @return array An array of Users.
      */
     public
     function get_users() {
@@ -92,7 +94,7 @@ class SyncCache {
     /**
      * Adds an Account.
      *
-     * @param $account A Account.
+     * @param $account Account A Account.
      */
     public
     function add_account(Account $account) {
@@ -117,21 +119,20 @@ class SyncCache {
     }
 
     /**
-     * Adds a tasklist template to the cache.
+     * Sets the tasklist templates
      *
-     * @param $name The name of the tasklist template
-     * @param $hash The tasklist template hash.
+     * @param $templates array
      */
     public
-    function set_tasklist_templates($templates) {
+    function set_tasklist_templates(array $templates) {
         $this->tasklist_templates = $templates;
     }
 
     /**
      * Gets the hash of a tasklist template.
      *
-     * @param $name The name of the tasklist template.
-     * @return The tasklist template hash or null if not found.
+     * @param $name string The name of the tasklist template.
+     * @return TasklistTemplate The tasklist template hash or null if not found.
      */
     public
     function get_tasklist_template($name) {

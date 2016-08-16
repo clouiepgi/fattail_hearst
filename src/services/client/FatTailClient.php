@@ -25,6 +25,14 @@ class FatTailClient {
         $this->soap_client->__setSoapHeaders($api_version_header);
     }
 
+    /**
+     * Make a SOAP call to FatTail
+     * @param $name string the name of the method
+     * @param $params array the arguments for the method
+     * @return object response
+     * @throws \Exception
+     * @throws \SoapFault
+     */
     public
     function call($name, $params = []) {
 

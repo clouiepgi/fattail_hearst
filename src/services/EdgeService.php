@@ -51,7 +51,9 @@ class EdgeService {
 
         if ($http_response->getStatusCode() !== 201) {
             $this->logger->error('Failed to create iMeetCentral account', [
-                'name' => $name
+                'name'          => $name,
+                'custom_fields' => $custom_fields,
+                'message'       => $http_response->getContent()
             ]);
 
             return None::create();
@@ -70,12 +72,12 @@ class EdgeService {
     /**
      * Creates a workspace on CD.
      *
-     * @param $account_id The CD account id this workspace will be under.
-     * @param $name The name of the workspace.
-     * @param $template_hash The hash of the workspace template.
-     * @param $custom_fields The custom fields of the workspace.
+     * @param $account_id integer The CD account id this workspace will be under.
+     * @param $name string The name of the workspace.
+     * @param $template_hash string The hash of the workspace template.
+     * @param $custom_fields array The custom fields of the workspace.
      *
-     * @return A new Workspace
+     * @return Option A new Workspace
      */
     public
     function create_cd_workspace(
@@ -94,6 +96,16 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if ($http_response->getStatusCode() !== 201) {
+            $this->logger->error('Failed to create iMeetCentral workspace', [
+                'name'          => $name,
+                'custom_fields' => $custom_fields,
+                'message'       => $http_response->getContent()
+            ]);
+
+            return None::create();
+        }
+
         $workspace_hash = $http_response->getContent();
 
         $workspace = new Workspace(
@@ -101,7 +113,7 @@ class EdgeService {
             $custom_fields['c_order_id']
         );
 
-        return $workspace;
+        return Option::fromValue($workspace);
     }
 
     /**
@@ -137,14 +149,14 @@ class EdgeService {
      * Puts together data in the correct format for Edge API
      * milestone creations.
      *
-     * @param $workspace_id The workspace id the milestone will be under.
-     * @param $name The name of the milestone.
-     * @param $description The description of the milestone.
-     * @param $start_date The start date of the milestone.
-     * @param $end_date The end date of the milestone.
-     * @param $custom_fields An array of custom fields.
+     * @param $workspace_id integer The workspace id the milestone will be under.
+     * @param $name string The name of the milestone.
+     * @param $description string The description of the milestone.
+     * @param $start_date string The start date of the milestone.
+     * @param $end_date string The end date of the milestone.
+     * @param $custom_fields array An array of custom fields.
      *
-     * @return A new Milestone.
+     * @return Milestone A new Milestone.
      */
     public
     function create_cd_milestone(
@@ -182,14 +194,14 @@ class EdgeService {
      * Puts together data in the correct format for Edge API
      * milestone updates.
      *
-     * @param $milestone_id The milestone id.
-     * @param $name The name of the milestone.
-     * @param $description The description of the milestone.
-     * @param $start_date The start date of the milestone.
-     * @param $end_date The end date of the milestone.
-     * @param $custom_fields An array of custom fields.
+     * @param $milestone_id string The milestone id.
+     * @param $name string The name of the milestone.
+     * @param $description string The description of the milestone.
+     * @param $start_date string The start date of the milestone.
+     * @param $end_date string The end date of the milestone.
+     * @param $custom_fields array An array of custom fields.
      *
-     * @return True on success, false otherwise
+     * @return boolean True on success, false otherwise
      */
     public
     function update_cd_milestone(
@@ -248,7 +260,7 @@ class EdgeService {
     /**
      * Gets all the cd accounts.
      *
-     * @return An array of Accounts.
+     * @return array An array of Accounts.
      */
     public
     function get_cd_accounts() {
@@ -317,8 +329,8 @@ class EdgeService {
     /**
      * Gets all the cd workspaces.
      *
-     * @param $account_hash The account hash of the workspaces.
-     * @return An array of workspaces belonging to account.
+     * @param $account_hash string The account hash of the workspaces.
+     * @return array An array of workspaces belonging to account.
      */
     public
     function get_cd_workspaces($account_hash) {
@@ -392,8 +404,8 @@ class EdgeService {
     /**
      * Gets all the cd milestones.
      *
-     * @param $workspace_hash The CD workspace hash
-     * @return An array of Milestones belonging to workspace
+     * @param $workspace_hash string The CD workspace hash
+     * @return array An array of Milestones belonging to workspace
      */
     public
     function get_cd_milestones($workspace_hash) {
@@ -476,7 +488,7 @@ class EdgeService {
     /**
      * The gets an array of tasklists belonging to a milestone.
      *
-     * @param $milestone The milestone of the tasklists being queried.
+     * @param $milestone Milestone The milestone of the tasklists being queried.
      * @return array An array of Tasklists
      */
     public
@@ -529,10 +541,10 @@ class EdgeService {
      * Assigns a user based on their full name to
      * a role by its name.
      *
-     * @param $full_name The user's full name.
-     * @param $role_hash The role's hash.
-     * @param $workspace_hash The workspace's hash.
-     * @param $role_name THe role's name.
+     * @param $full_name string The user's full name.
+     * @param $role_hash string The role's hash.
+     * @param $workspace_hash string The workspace's hash.
+     * @param $role_name string The role's name.
      */
     public
     function assign_user_to_role($full_name, $role_hash, $workspace_hash, $role_name) {
@@ -572,9 +584,9 @@ class EdgeService {
     /**
      * Adds tasklists to a milestone using an array of tasklist hashes.
      *
-     * @param $milestone_hash The milestone to add tasklists to.
-     * @param $tasklist_template_hashes An array of tasklist template hashes to use.
-     * @param $start_date The start date for the tasklist
+     * @param $milestone Milestone The milestone to add tasklists to.
+     * @param $tasklist_template_hashes array An array of tasklist template hashes to use.
+     * @param $start_date string The start date for the tasklist
      */
     public
     function add_tasklists_to_milestone($milestone, $tasklist_template_names, $start_date) {
@@ -617,7 +629,7 @@ class EdgeService {
                     );
                 }
                 else {
-                    $this->logger->warn(
+                    $this->logger->warning(
                         'Failed to find tasklist template',
                         [
                             'Name'           => $tasklist_template_name,
@@ -681,10 +693,10 @@ class EdgeService {
     /**
      * Makes POST requests to Edge.
      *
-     * @param $path The path for the resource
-     * @param $details An array/object representing the entity data
+     * @param $path string The path for the resource
+     * @param $details array|object An array/object representing the entity data
      *
-     * @return A Psr\Http\Message\ResponseInterface object
+     * @return object A Psr\Http\Message\ResponseInterface object
      */
     protected
     function cd_post($path, $details) {
@@ -715,7 +727,7 @@ class EdgeService {
      * @param $path string THe path for the resource
      * @param $query_params array|object An array/object representing the entity data
      *
-     * @return Psr\Http\Message\ResponseInterface object
+     * @return object response
      */
     protected
     function cd_get($path, $query_params) {
@@ -743,7 +755,7 @@ class EdgeService {
      * Finds a Central Desktop user by first name and last name.
      * The names will be formatted to "first last" and compared.
      *
-     * @param $first_name The first name of the user.
+     * @param $first_name string The first name of the user.
      *
      * @return The user id.
      */
@@ -800,9 +812,9 @@ class EdgeService {
      * Builds the custom fields for use with
      * the Edge API call.
      *
-     * @param $custom_fields An array of custom field and value pairs.
+     * @param $custom_fields array An array of custom field and value pairs.
      *
-     * @return An array of objects representing custom fields.
+     * @return array An array of objects representing custom fields.
      */
     private
     function create_cd_custom_fields($custom_fields) {

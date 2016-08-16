@@ -21,8 +21,8 @@ class FatTailService {
      * Gets the saved report information by
      * saved report name.
      *
-     * @param $name The name of the saved report.
-     * @return Saved report object
+     * @param $name string The name of the saved report.
+     * @return object Saved report object
      */
     public
     function get_saved_report_info_by_name($name) {
@@ -47,7 +47,7 @@ class FatTailService {
     /**
      * Gets a list of saved reports from FatTail
      *
-     * @return An array of saved reports.
+     * @return array An array of saved reports.
      */
     public
     function get_saved_report_list() {
@@ -74,8 +74,8 @@ class FatTailService {
     /**
      * Runs a FatTail report job.
      *
-     * @param $report_job The report job to run.
-     * @return The FatTail report id.
+     * @param $report_job array The report job to run.
+     * @return integer The FatTail report id.
      */
     public
     function run_report_job($report_job) {
@@ -91,8 +91,8 @@ class FatTailService {
     /**
      * Gets a report job from FatTail by report job id.
      *
-     * @param $job_id The report job id.
-     * @return The FatTail report job object.
+     * @param $job_id integer The report job id.
+     * @return object The FatTail report job object.
      */
     public
     function get_report_job_by_id($job_id) {
@@ -106,8 +106,8 @@ class FatTailService {
     /**
      * Gets a report download URL from FatTail by report job id.
      *
-     * @param $job_id The report job id.
-     * @return The FatTail report URL object.
+     * @param $job_id integer The report job id.
+     * @return object The FatTail report URL object.
      */
     public
     function get_report_url_by_id($job_id) {
@@ -130,9 +130,9 @@ class FatTailService {
     /**
      * Queries FatTail for a client by its id.
      *
-     * @param $client_id The FatTail client id.
+     * @param $client_id integer The FatTail client id.
      *
-     * @return The FatTail client object.
+     * @return object The FatTail client object.
      */
     public
     function get_client_by_id($client_id) {
@@ -146,9 +146,9 @@ class FatTailService {
     /**
      * Queries FatTail for an order by its id.
      *
-     * @param $order_id The FatTail order id.
+     * @param $order_id integer The FatTail order id.
      *
-     * @return The FatTail order object.
+     * @return object The FatTail order object.
      */
     public
     function get_order_by_id($order_id) {
@@ -162,9 +162,9 @@ class FatTailService {
     /**
      * Queries FatTail for a drop by its id.
      *
-     * @param $drop_id The FatTail drop id.
+     * @param $drop_id integer The FatTail drop id.
      *
-     * @return The FatTail drop object.
+     * @return object The FatTail drop object.
      */
     public
     function get_drop_by_id($drop_id) {
@@ -178,9 +178,9 @@ class FatTailService {
     /**
      * Updates a FatTail client.
      *
-     * @param $client The FatTail client object.
+     * @param $client object The FatTail client object.
      *
-     * @return The response object.
+     * @return object The response object.
      */
     public
     function update_client($client) {
@@ -210,9 +210,9 @@ class FatTailService {
     /**
      * Updates a FatTail drop.
      *
-     * @param $drop The FatTail drop object.
+     * @param $drop object The FatTail drop object.
      *
-     * @return The response object.
+     * @return object The response object.
      */
     public
     function update_drop($drop) {
@@ -260,8 +260,8 @@ class FatTailService {
      * Finds and returns the id of the drop dynamic property
      * in FatTail.
      *
-     * @param $name The name of the drop dynamic property.
-     * @return The drop dynamic property id if found, else null
+     * @param $name string The name of the drop dynamic property.
+     * @return integer The drop dynamic property id if found, else null
      */
     public
     function get_drop_dynamic_property_id($name) {

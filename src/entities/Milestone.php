@@ -15,7 +15,7 @@ class Milestone extends Entity {
     /**
      * Sets the milestone tasklists.
      *
-     * @param $tasklists Array of tasklists with their name as the key.
+     * @param $tasklists array of tasklists with their name as the key.
      */
     public
     function set_tasklists($tasklists) {
@@ -26,7 +26,7 @@ class Milestone extends Entity {
     /**
      * Adds a tasklist to milestone.
      *
-     * @param $tasklist The tasklist to add to milestone.
+     * @param $tasklist Tasklist The tasklist to add to milestone.
      */
     public
     function add_tasklist($tasklist) {
@@ -37,7 +37,7 @@ class Milestone extends Entity {
     /**
      * Checks if a tasklist exists in milestone.
      *
-     * @param $name The name of the tasklist
+     * @param $name string The name of the tasklist
      * @return true if it does, false otherwise
      */
     public

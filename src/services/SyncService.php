@@ -10,6 +10,7 @@
 namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
+use CentralDesktop\FatTail\Entities\Milestone;
 use CentralDesktop\FatTail\Entities\Workspace;
 use JmesPath;
 use League\Csv\Reader;
@@ -66,6 +67,7 @@ class SyncService {
 
     /**
      * Syncs Edge and FatTail.
+     * @param $report_name string The name of the report
      */
     public
     function sync($report_name = '') {
@@ -251,11 +253,13 @@ class SyncService {
     /**
      * Downloads a CSV report from FatTail.
      *
-     * @param $report The report that will
+     * @param $report object The report that will
      *        have it's CSV file generated.
-     * @param $dir The system directory to save the CSV to.
+     * @param $dir string The system directory to save the CSV to.
+     * @param $start_date string The start date in m/d/Y format
+     * @param $end_date string The end date in m/d/Y format
      *
-     * @return System path to the CSV file.
+     * @return string System path to the CSV file.
      */
     protected
     function download_report_csv(
@@ -359,7 +363,7 @@ class SyncService {
      * Cleans up (deletes) all CSV files within the directory
      * and then deletes the directory.
      *
-     * @param $dir The directory to clean up.
+     * @param $dir string The directory to clean up.
      */
     protected
     function clean_up($dir = '') {
@@ -409,8 +413,8 @@ class SyncService {
     /**
      * Syncs a FatTail client with CD.
      *
-     * @param $client The FatTail Client.
-     * @return An Account representing the CD account.
+     * @param $client object The FatTail Client.
+     * @return Option An Account representing the CD account.
      */
     private
     function sync_client($client) {
@@ -535,12 +539,12 @@ class SyncService {
     /**
      * Syncs a FatTail drop with CD.
      *
-     * @param $drop The FatTail drop.
-     * @param $cd_workspace The Workspace the milestone will be under.
-     * @param $drop_data The FatTail drop data.
-     * @param $drop_milestone_property_id The dynamic property id
+     * @param $drop object The FatTail drop.
+     * @param $cd_workspace Workspace The Workspace the milestone will be under.
+     * @param $drop_data array The FatTail drop data.
+     * @param $drop_milestone_property_id integer The dynamic property id
      *                                    of the FatTail drop.
-     * @return A Milestone that represents a CD milestone.
+     * @return Milestone A Milestone that represents a CD milestone.
      */
     private
     function sync_drop(
@@ -623,8 +627,8 @@ class SyncService {
      * Converts a value into a value using only arrays.
      * Only works on public members.
      *
-     * @param $thing The value to be converted.
-     * @return The value using only arrays.
+     * @param $thing array|object The value to be converted.
+     * @return array The value using only arrays.
      */
     private
     function convert_to_arrays($thing) {

@@ -10,6 +10,11 @@ class Account extends Entity {
     public $c_client_id = null;
     private $workspaces = [];
 
+    /**
+     * Account constructor.
+     * @param $hash string
+     * @param $c_client_id integer
+     */
     function __construct($hash, $c_client_id) {
         parent::__construct($hash);
         $this->c_client_id = $c_client_id;
@@ -18,7 +23,7 @@ class Account extends Entity {
     /**
      * Sets the workspaces.
      *
-     * @param $workspaces The workspaces.
+     * @param $workspaces array The workspaces.
      */
     public
     function set_workspaces($workspaces) {
