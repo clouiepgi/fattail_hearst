@@ -49,7 +49,7 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
-        if ($http_response->getStatusCode() !== 201) {
+        if (!$http_response->isSuccessful()) {
             $this->logger->error('Failed to create iMeetCentral account', [
                 'name'          => $name,
                 'custom_fields' => $custom_fields,
@@ -96,7 +96,7 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
-        if ($http_response->getStatusCode() !== 201) {
+        if (!$http_response->isSuccessful()) {
             $this->logger->error('Failed to create iMeetCentral workspace', [
                 'name'          => $name,
                 'custom_fields' => $custom_fields,
@@ -180,7 +180,7 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
-        if ($http_response !== 201) {
+        if (!$http_response->isSuccessful()) {
             $this->logger->error('Failed to create iMeetCentral milestone', [
                 'name'          => $name,
                 'custom_fields' => $custom_fields,
