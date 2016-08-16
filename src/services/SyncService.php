@@ -10,6 +10,7 @@
 namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
+use CentralDesktop\FatTail\Entities\Workspace;
 use JmesPath;
 use League\Csv\Reader;
 use PhpCollection\Sequence;
@@ -178,7 +179,7 @@ class SyncService {
                 // Get order details
                 $cd_workspace = $this->cache->get_order($order_id)
                     ->orElse(Option::fromValue($this->fattail_service->get_order_by_id($order_id)))
-                    ->map(function($order) use ($cd_account, $order_data, $order_workspace_property_id) {
+                    ->flatMap(function($order) use ($cd_account, $order_data, $order_workspace_property_id) {
                         $this->cache->add_order($order);
                         return $this->sync_order(
                             $order,
@@ -452,7 +453,7 @@ class SyncService {
      * @param $order_data array The FatTail order data.
      * @param $order_workspace_property_id integer The dynamic property id of
      *                                     the FatTail order.
-     * @return A Workspace representing the CD workspace
+     * @return Option A Workspace representing the CD workspace
      */
     private
     function sync_order(
@@ -462,67 +463,71 @@ class SyncService {
         $order_workspace_property_id
     ) {
 
-        $cd_workspace = $cd_account->find_workspace_by_c_order_id(
-            $order->OrderID
-        );
-        if ($cd_workspace === null) {
+        // Get the name from the campaign name
+        $name_parts = explode('|', $order_data['campaign_name']);
+        $name = trim($name_parts[count($name_parts) - 1]);
 
-            // Get the name from the campaign name
-            $name_parts = explode('|', $order_data['campaign_name']);
-            $name = trim($name_parts[count($name_parts) - 1]);
-
-            $custom_fields = [
-                'c_order_id'            => $order->OrderID,
-                'c_campaign_status'     => $order_data['c_campaign_status'],
-                'c_campaign_start_date' => $order_data['c_campaign_start_date'],
-                'c_campaign_end_date'   => $order_data['c_campaign_end_date']
-            ];
-            $cd_workspace = $this->edge_service->create_cd_workspace(
+        $custom_fields = [
+            'c_order_id'            => $order->OrderID,
+            'c_campaign_status'     => $order_data['c_campaign_status'],
+            'c_campaign_start_date' => $order_data['c_campaign_start_date'],
+            'c_campaign_end_date'   => $order_data['c_campaign_end_date']
+        ];
+        $cd_workspace = $cd_account->find_workspace_by_c_order_id($order->OrderID)
+            ->orElse($this->cache->get_workspace_hash_by_name($name))
+            ->orElse($this->edge_service->get_cd_workspace($order_data['workspace_id']))
+            ->orElse($this->edge_service->create_cd_workspace(
                 $cd_account->hash,
                 $name,
                 $this->workspace_template_hash,
                 $custom_fields
-            );
-
-            $cd_account->add_workspace($cd_workspace);
-        }
+            ))
+            ->forAll(function(Workspace $workspace) use (&$cd_account) {
+                $cd_account->add_workspace($workspace);
+            });
 
         if ($this->fattail_overwrite || $order_data['workspace_id'] === '') {
 
-            // Only need to update Order DynamicPropertyValue
-            // if it doesn't have one
-            $dynamic_properties = $order
-                ->OrderDynamicProperties
-                ->DynamicPropertyValue;
-            $order->OrderDynamicProperties->DynamicPropertyValue =
-                $this->fattail_service->update_dynamic_properties(
-                    $dynamic_properties,
-                    $order_workspace_property_id,
-                    $cd_workspace->hash
-                );
+            $cd_workspace->forAll(function(Workspace $workspace) use ($order, $order_workspace_property_id) {
 
-            $this->fattail_service->update_order($order);
+                // Only need to update Order DynamicPropertyValue
+                // if it doesn't have one
+                $dynamic_properties = $order
+                    ->OrderDynamicProperties
+                    ->DynamicPropertyValue;
+                $order->OrderDynamicProperties->DynamicPropertyValue =
+                    $this->fattail_service->update_dynamic_properties(
+                        $dynamic_properties,
+                        $order_workspace_property_id,
+                        $workspace->hash
+                    );
+
+                $this->fattail_service->update_order($order);
+            });
         }
 
-        // Assign Salesrole
-        $sales_rep_name = $this->format_name($order_data['sales_rep']);
-        $this->edge_service->assign_user_to_role(
-            $sales_rep_name,
-            $this->roles['sales_role_hash'],
-            $cd_workspace->hash,
-            'Sales Rep'
-        );
+        $cd_workspace->forAll(function(Workspace $workspace) use ($order_data) {
 
-        // Assign HDM PM
-        if (!empty($order_data['hdm_pm'])) {
-            $hdm_pm_name = $this->format_name($order_data['hdm_pm']);
+            // Assign Salesrole
+            $sales_rep_name = $this->format_name($order_data['sales_rep']);
             $this->edge_service->assign_user_to_role(
-                $hdm_pm_name,
-                $this->roles['hdm_pm_role_hash'],
-                $cd_workspace->hash,
-                'HDM Project Manager'
+                $sales_rep_name,
+                $this->roles['sales_role_hash'],
+                $workspace->hash,
+                'Sales Rep'
             );
-        }
+
+            // Assign HDM PM
+            if (!empty($order_data['hdm_pm'])) {
+                $hdm_pm_name = $this->format_name($order_data['hdm_pm']);
+                $this->edge_service->assign_user_to_role(
+                    $hdm_pm_name,
+                    $this->roles['hdm_pm_role_hash'],
+                    $workspace->hash,
+                    'HDM Project Manager'
+                );
+            }
+        });
 
         return $cd_workspace;
     }

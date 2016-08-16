@@ -194,9 +194,9 @@ class FatTailService {
     /**
      * Updates a FatTail order.
      *
-     * @param $order The FatTail order object.
+     * @param $order object The FatTail order object.
      *
-     * @return The response object.
+     * @return object The response object.
      */
     public
     function update_order($order) {
@@ -283,10 +283,10 @@ class FatTailService {
      * Updates or adds a DynamicPropertyValue to
      * an array of DynamicPropertyValues.
      *
-     * @param $properties An array of FatTail DynamicPropertyValues.
-     * @param $id The FatTail DynamicPropertyID.
-     * @param $value The FatTail property value.
-     * @return The updated array of dynamic property values.
+     * @param $properties array An array of FatTail DynamicPropertyValues.
+     * @param $id integer The FatTail DynamicPropertyID.
+     * @param $value string The FatTail property value.
+     * @return array The updated array of dynamic property values.
      */
     public
     function update_dynamic_properties($properties = [], $id, $value) {

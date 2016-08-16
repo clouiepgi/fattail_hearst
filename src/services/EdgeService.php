@@ -105,6 +105,35 @@ class EdgeService {
     }
 
     /**
+     * Gets a CD workspace with hash.
+     *
+     * @param $hash string
+     * @return Option
+     */
+    public
+    function get_cd_workspace($hash) {
+
+        $path = "workspaces/$hash";
+
+        $http_response = $this->cd_get($path, []);
+
+        if ($http_response->getStatusCode() === 200) {
+            $workspace_data = json_decode($http_response->getContent());
+            if (property_exists($workspace_data->details, 'customFields')) {
+
+                $c_order_id = JmesPath\Env::search(
+                    "customFields[?fieldApiId=='c_order_id'].value | [0]",
+                    $workspace_data->details
+                );
+            }
+
+            return Option::fromValue(new Workspace($workspace_data->id, $workspace_data->details->workspaceName, $c_order_id));
+        }
+
+        return None::create();
+    }
+
+    /**
      * Puts together data in the correct format for Edge API
      * milestone creations.
      *
@@ -683,8 +712,8 @@ class EdgeService {
     /**
      * Makes GET requests to Edge.
      *
-     * @param $path The path for the resource
-     * @param $query_params An array/object representing the entity data
+     * @param $path string THe path for the resource
+     * @param $query_params array|object An array/object representing the entity data
      *
      * @return Psr\Http\Message\ResponseInterface object
      */

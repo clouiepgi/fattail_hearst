@@ -2,6 +2,9 @@
 
 namespace  CentralDesktop\FatTail\Entities;
 
+use PhpOption\None;
+use PhpOption\Option;
+
 class Account extends Entity {
 
     public $c_client_id = null;
@@ -35,16 +38,16 @@ class Account extends Entity {
     /**
      * Finds a workspace with c_order_id.
      *
-     * @param $c_order_id The FatTail order id
-     * @return CD_Workspace with c_order_id or null if not found
+     * @param $c_order_id integer FatTail order id
+     * @return Option workspace with c_order_id or null if not found
      */
     public
     function find_workspace_by_c_order_id($c_order_id) {
 
         if (array_key_exists($c_order_id, $this->workspaces)) {
-            return $this->workspaces[$c_order_id];
+            return Option::fromValue($this->workspaces[$c_order_id]);
         }
 
-        return null;
+        return None::create();
     }
 }
