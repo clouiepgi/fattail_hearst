@@ -159,7 +159,11 @@ class SyncService {
 
                 $this->logger->error(
                     'Failed to sync client. Skipping the workspace and milestone.',
-                    ['Client ID' => $client_id]
+                    [
+                        'Client ID'   => $client_id,
+                        'Campaign ID' => $row[$col_map['Campaign ID']],
+                        'Drop ID'     => $row[$col_map['Drop ID']],
+                    ]
                 );
 
                 continue;
@@ -203,9 +207,9 @@ class SyncService {
             }
 
             // Process the drop
+            $drop_id = $row[$col_map['Drop ID']];
             try {
                 // Get drop details
-                $drop_id = $row[$col_map['Drop ID']];
                 $drop = $this->fattail_service->get_drop_by_id($drop_id);
 
                 $package_drop_id = $row[$col_map['Package Drop ID']];
@@ -223,7 +227,7 @@ class SyncService {
                     'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']]
                 ];
 
-                $cd_milestone = $this->sync_drop(
+                $this->sync_drop(
                     $drop,
                     $cd_workspace,
                     $milestone_data,
@@ -383,27 +387,16 @@ class SyncService {
     function prepare_cache() {
 
         // Fetch all FatTail clients into an associative array by client id for easy lookup
-        $fattail_clients = (new Sequence($this->fattail_service->get_clients()))
-            ->foldLeft([], function($clients, $client) {
-                $clients[$client->ClientID] = $client;
-                return $clients;
-            });
-        $this->cache->set_clients($fattail_clients);
+        $this->cache->set_clients($this->fattail_service->get_clients());
 
-        // Populate a local copy of CD accounts, workspace, and milestones
-        $this->cache->set_accounts(array_map(function ($account) {
-
-            $account->set_workspaces(array_map(function ($workspace) {
-
-                $workspace->set_milestones(
-                    $this->edge_service->get_cd_milestones($workspace->hash)
-                );
-
-                return $workspace;
-            }, $this->edge_service->get_cd_workspaces($account->hash)));
-
-            return $account;
-        }, $this->edge_service->get_cd_accounts()));
+        // Only need to cache accounts and workspaces since they're repeated
+        $workspaces = [];
+        $accounts = $this->edge_service->get_cd_accounts();
+        foreach ($accounts as $account) {
+            $workspaces = array_merge($workspaces, $this->edge_service->get_cd_workspaces($account->hash));
+        }
+        $this->cache->set_workspaces($workspaces);
+        $this->cache->set_accounts($accounts);
 
         $this->cache->set_tasklist_templates(
             $this->edge_service->get_cd_tasklist_templates()
@@ -426,9 +419,9 @@ class SyncService {
         $cd_account = $this->cache->find_account_by_c_client_id(
             $client->ClientID
         )
-        // Try fetching by hash
+        // Try fetching by hash from iMC API
         ->orElse($this->edge_service->get_cd_account($client->ExternalID))
-        // Create a new CD Account
+        // Create a new CD Account if we couldn't find an account
         ->orElse($this->edge_service->create_cd_account(
             $client->Name,
             $custom_fields
@@ -477,17 +470,29 @@ class SyncService {
             'c_campaign_start_date' => $order_data['c_campaign_start_date'],
             'c_campaign_end_date'   => $order_data['c_campaign_end_date']
         ];
-        $cd_workspace = $cd_account->find_workspace_by_c_order_id($order->OrderID)
-            ->orElse($this->cache->get_workspace_hash_by_name($name))
-            ->orElse($this->edge_service->get_cd_workspace($order_data['workspace_id']))
-            ->orElse($this->edge_service->create_cd_workspace(
+        $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID)
+            // Couldn't find it in cache so try to fetch it from iMC by hash
+            ->orElse($this->edge_service->get_cd_workspace($order_data['workspace_id']));
+
+        // Couldn't find it in cache or by iMC API hash so try searching under parent account
+        $cd_workspace->getOrCall(function() use ($cd_account, $order) {
+            foreach ($this->edge_service->get_cd_workspaces($cd_account->hash) as $workspace) {
+                /* @var $workspace Workspace */
+                $this->cache->add_workspace($workspace);
+            }
+
+            return Option::fromValue($this->cache->get_workspace_by_order_id($order->OrderID));
+        });
+
+        // Couldn't find a workspace so create it
+        $cd_workspace->orElse($this->edge_service->create_cd_workspace(
                 $cd_account->hash,
                 $name,
                 $this->workspace_template_hash,
                 $custom_fields
             ))
             ->forAll(function(Workspace $workspace) use (&$cd_account) {
-                $cd_account->add_workspace($workspace);
+                $this->cache->add_workspace($workspace);
             });
 
         if ($this->fattail_overwrite || $order_data['workspace_id'] === '') {

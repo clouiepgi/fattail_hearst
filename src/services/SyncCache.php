@@ -4,6 +4,8 @@ namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
 use CentralDesktop\FatTail\Entities\TasklistTemplate;
+use CentralDesktop\FatTail\Entities\Workspace;
+use PhpCollection\Sequence;
 use PhpOption\None;
 use PhpOption\Option;
 
@@ -17,12 +19,16 @@ class SyncCache {
     private $tasklist_templates = [];
 
     /**
-     * Sets the FatTail clients
+     * Sets the FatTail clients and hashes them by client id
      * @param array $clients
      */
     public
     function set_clients(array $clients = []) {
-        $this->clients = $clients;
+        $this->clients = (new Sequence($clients))
+            ->foldLeft([], function($clients, $client) {
+                $clients[$client->ClientID] = $client;
+                return $clients;
+            });
     }
 
     /**
@@ -59,14 +65,17 @@ class SyncCache {
     }
 
     /**
-     * Sets the accounts.
+     * Sets the accounts and hashes them by c_client_id.
      *
      * @param $accounts array An array of Accounts.
      */
     public
     function set_accounts(array $accounts = []) {
-
-        $this->accounts = $accounts;
+        $this->accounts = (new Sequence($accounts))
+            ->foldLeft([], function(array $accounts, Account $account) {
+                $accounts[$account->c_client_id] = $account;
+                return $accounts;
+            });
     }
 
     /**
@@ -98,7 +107,6 @@ class SyncCache {
      */
     public
     function add_account(Account $account) {
-
         $this->accounts[$account->c_client_id] = $account;
     }
 
@@ -145,30 +153,36 @@ class SyncCache {
     }
 
     /**
-     * Sets the cache workspaces.
-     *
-     * @param $workspaces
+     * Adds a workspace to the cache.
+     * @param Workspace $workspace
      */
     public
-    function set_workspaces($workspaces) {
-        $this->workspaces = $workspaces;
+    function add_workspace(Workspace $workspace) {
+        $this->workspaces[$workspace->c_order_id] = $workspace;
     }
 
     /**
-     * Finds a workspace by its name.
+     * Sets the cache workspaces and hashes them by name.
      *
-     * @param $name string
+     * @param $workspaces array Workspaces hashed by their hash
+     */
+    public
+    function set_workspaces($workspaces) {
+        $this->workspaces = (new Sequence($workspaces))
+            ->foldLeft([], function(array $workspaces, Workspace $workspace) {
+                $workspaces[$workspace->c_order_id] = $workspace;
+                return $workspaces;
+            });
+    }
+
+    /**
+     * Finds a workspace by its order id.
+     *
+     * @param $order_id integer the order id
      * @return Option
      */
     public
-    function get_workspace_hash_by_name($name) {
-
-        foreach ($this->workspaces as $workspace) {
-            if ($workspace->name === $name) {
-                return Option::fromValue($workspace);
-            }
-        }
-
-        return None::create();
+    function get_workspace_by_order_id($order_id) {
+        return Option::fromValue($this->workspaces[$order_id]);
     }
 }
