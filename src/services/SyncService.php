@@ -143,13 +143,14 @@ class SyncService {
             // Get client details
             $client_id = $row[$col_map['Client ID']];
             try {
-                $cd_account = $this->cache->get_client($client_id);
+                $client = $this->cache->get_client($client_id);
 
-                if ($cd_account->isEmpyt()) {
-                    $cd_account = Option::fromValue($this->fattail_service->get_client_by_id($client_id))
+                if ($client->isEmpty()) {
+                    $client = Option::fromValue($this->fattail_service->get_client_by_id($client_id));
                 }
 
-                $cd_account->flatMap(function($client) {
+                $cd_account = $client->flatMap(function($client) {
+                    $this->cache->add_client($client);
                     return $this->sync_client($client);
                 })->getOrThrow(new \Exception());
 
@@ -182,9 +183,13 @@ class SyncService {
             $order_id = $row[$col_map['Campaign ID']];
             try {
                 // Get order details
-                $cd_workspace = $this->cache->get_order($order_id)
-                    ->orElse(Option::fromValue($this->fattail_service->get_order_by_id($order_id)))
-                    ->flatMap(function($order) use ($cd_account, $order_data, $order_workspace_property_id) {
+                $order = $this->cache->get_order($order_id);
+
+                if ($order->isEmpty()) {
+                    $order = Option::fromValue($this->fattail_service->get_order_by_id($order_id));
+                }
+
+                $cd_workspace = $order->flatMap(function($order) use ($cd_account, $order_data, $order_workspace_property_id) {
                         $this->cache->add_order($order);
                         return $this->sync_order(
                             $order,

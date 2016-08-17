@@ -34,6 +34,14 @@ class SyncCache {
     }
 
     /**
+     * Adds a client to the cache.
+     * @param $client object A client object
+     */
+    public
+    function add_client($client) {
+        $this->clients[$client->ClientID] = $client;
+    }
+    /**
      * Gets a client by id.
      * @param $id integer
      * @return Option The client with $id
