@@ -143,12 +143,15 @@ class SyncService {
             // Get client details
             $client_id = $row[$col_map['Client ID']];
             try {
-                $cd_account = $this->cache->get_client($client_id)
-                    ->orElse(Option::fromValue($this->fattail_service->get_client_by_id($client_id)))
-                    ->flatMap(function($client) {
-                        return $this->sync_client($client);
-                    })
-                    ->getOrThrow(new \Exception());
+                $cd_account = $this->cache->get_client($client_id);
+
+                if ($cd_account->isEmpyt()) {
+                    $cd_account = Option::fromValue($this->fattail_service->get_client_by_id($client_id))
+                }
+
+                $cd_account->flatMap(function($client) {
+                    return $this->sync_client($client);
+                })->getOrThrow(new \Exception());
 
             }
             catch (\Exception $e) {
@@ -189,8 +192,7 @@ class SyncService {
                             $order_data,
                             $order_workspace_property_id
                         );
-                    })
-                    ->getOrThrow(new \Exception());
+                    })->getOrThrow(new \Exception());
             }
             catch (\Exception $e) {
 
@@ -228,7 +230,7 @@ class SyncService {
                     $cd_workspace,
                     $milestone_data,
                     $drop_milestone_property_id
-                );
+                )->getOrThrow(new \Exception());
             }
             catch (\Exception $e) {
 
@@ -559,7 +561,7 @@ class SyncService {
      * @param $drop_data array The FatTail drop data.
      * @param $drop_milestone_property_id integer The dynamic property id
      *                                    of the FatTail drop.
-     * @return Milestone A Milestone that represents a CD milestone.
+     * @return Option A Milestone that represents a CD milestone.
      */
     private
     function sync_drop(
