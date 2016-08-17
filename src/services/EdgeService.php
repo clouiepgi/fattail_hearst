@@ -839,19 +839,13 @@ class EdgeService {
         if ($users === null) {
             // Cache hasn't been set yet
 
-            $last_record = '';
-            $path        = 'users';
-            $users       = [];
+            $params = ['limit' => 100];
+            $path   = 'users';
+            $users  = [];
 
             do {
-
-                $query_params = ['limit' => 100];
-
-                if ($last_record !== '') {
-                    $query_params['lastRecord'] = $last_record;
-                }
-
-                $http_response = $this->cd_get($path, $query_params);
+                $http_response = $this->cd_get($path, $params);
+                $params = [];
 
                 $json = json_decode($http_response->getContent());
                 if (property_exists($json, 'items')) {
@@ -864,8 +858,11 @@ class EdgeService {
                     break;
                 }
 
-                $last_record = $json->lastRecord;
-            } while ($last_record !== '');
+
+                if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                    $params = $this->get_query_params($json->links->next);
+                }
+            } while (count($params) > 0);
 
             $this->cache->set_users($users);
         }
