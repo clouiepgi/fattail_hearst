@@ -412,6 +412,7 @@ class SyncService {
     private
     function sync_client($client) {
 
+        $created = false;
         // Process the client
         $custom_fields = [
             'c_client_id' => $client->ClientID
@@ -429,13 +430,16 @@ class SyncService {
                 $client->Name,
                 $custom_fields
             );
+            $cd_account->forAll(function(Account $account) use (&$created) {
+               $created = true;
+            });
         }
 
         $cd_account->forAll(function(Account $account) {
             $this->cache->add_account($account);
         });
 
-        if ($this->fattail_overwrite || $client->ExternalID === '') {
+        if ($this->fattail_overwrite || $created || $client->ExternalID === '') {
             $cd_account->forAll(function(Account $account) use ($client) {
                 // Update the FatTail client external id
                 // if it doesn't have a value
@@ -464,6 +468,7 @@ class SyncService {
         $order_data,
         $order_workspace_property_id
     ) {
+        $created = false;
         // Get the name from the campaign name
         $name_parts = explode('|', $order_data['campaign_name']);
         $name = trim($name_parts[count($name_parts) - 1]);
@@ -497,6 +502,9 @@ class SyncService {
                 $this->workspace_template_hash,
                 $custom_fields
             );
+            $cd_workspace->forAll(function(Workspace $workspace) use (&$created) {
+                $created = true;
+            });
         }
         else {
             if ($this->fattail_overwrite || $should_process) {
@@ -521,7 +529,7 @@ class SyncService {
             $this->cache->add_workspace($workspace);
         });
 
-        if ($this->fattail_overwrite || $order_data['workspace_id'] === '') {
+        if ($this->fattail_overwrite || $created || $order_data['workspace_id'] === '') {
             $order = $this->cache->get_order($order_id);
 
             if ($order->isEmpty()) {
@@ -596,6 +604,7 @@ class SyncService {
         $drop_milestone_property_id
     ) {
 
+        $created = false;
         // Try finding it in the cache
         $cd_milestone = $this->cache->get_milestone_by_drop_id($drop_id);
 
@@ -632,8 +641,8 @@ class SyncService {
                 $drop_data['end_date'],
                 $custom_fields
             )
-            ->forAll(function(Milestone $milestone) {
-                $this->cache->add_milestone($milestone);
+            ->forAll(function(Milestone $milestone) use (&$created) {
+                $created = true;
             });
         }
         else {
@@ -659,6 +668,10 @@ class SyncService {
             }
         }
 
+        $cd_milestone->forAll(function(Milestone $milestone) {
+            $this->cache->add_milestone($milestone);
+        });
+
         // Add tasklist to milestone
         $name_parts = explode('|', $drop_data['name']);
         $drop_type  = $name_parts[count($name_parts) - 1];
@@ -667,7 +680,7 @@ class SyncService {
         $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
             $this->tasklist_templates[$drop_type] : [];
 
-        if (($this->fattail_overwrite || $drop_data['milestone_id'] === '')) {
+        if (($this->fattail_overwrite || $created || $drop_data['milestone_id'] === '')) {
 
             $drop = $this->fattail_service->get_drop_by_id($drop_id);
 
