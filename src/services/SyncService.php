@@ -505,6 +505,7 @@ class SyncService {
             $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID);
         }
 
+        $should_process = $this->diff_service->is_different(DiffService::ORDERS_TYPE, $order->OrderID, $order_data);
         if ($cd_workspace->isEmpty()) {
             // Couldn't find a workspace so create it
             $cd_workspace = $this->edge_service->create_cd_workspace(
@@ -513,6 +514,24 @@ class SyncService {
                 $this->workspace_template_hash,
                 $custom_fields
             );
+        }
+        else {
+            if ($this->fattail_overwrite || $should_process) {
+                $status = $cd_workspace->map(function(Workspace $workspace) use ($custom_fields, $name) {
+
+                    return $this->edge_service->update_cd_workspace(
+                        $workspace->hash,
+                        $name,
+                        $custom_fields
+                    );
+                })->getOrElse(false);
+
+                if (!$status) {
+                    $this->logger->warning(
+                        "Failed to updated a workspace. Continuing."
+                    );
+                }
+            }
         }
 
         $cd_workspace->forAll(function(Workspace $workspace) use (&$cd_account) {
@@ -539,28 +558,30 @@ class SyncService {
             });
         }
 
-        $cd_workspace->forAll(function(Workspace $workspace) use ($order_data) {
+        if ($this->fattail_overwrite || $should_process) {
+            $cd_workspace->forAll(function(Workspace $workspace) use ($order_data) {
 
-            // Assign Salesrole
-            $sales_rep_name = $this->format_name($order_data['sales_rep']);
-            $this->edge_service->assign_user_to_role(
-                $sales_rep_name,
-                $this->roles['sales_role_hash'],
-                $workspace->hash,
-                'Sales Rep'
-            );
-
-            // Assign HDM PM
-            if (!empty($order_data['hdm_pm'])) {
-                $hdm_pm_name = $this->format_name($order_data['hdm_pm']);
+                // Assign Salesrole
+                $sales_rep_name = $this->format_name($order_data['sales_rep']);
                 $this->edge_service->assign_user_to_role(
-                    $hdm_pm_name,
-                    $this->roles['hdm_pm_role_hash'],
+                    $sales_rep_name,
+                    $this->roles['sales_role_hash'],
                     $workspace->hash,
-                    'HDM Project Manager'
+                    'Sales Rep'
                 );
-            }
-        });
+
+                // Assign HDM PM
+                if (!empty($order_data['hdm_pm'])) {
+                    $hdm_pm_name = $this->format_name($order_data['hdm_pm']);
+                    $this->edge_service->assign_user_to_role(
+                        $hdm_pm_name,
+                        $this->roles['hdm_pm_role_hash'],
+                        $workspace->hash,
+                        'HDM Project Manager'
+                    );
+                }
+            });
+        }
 
         return $cd_workspace;
     }
@@ -609,8 +630,6 @@ class SyncService {
         ];
         $milestone_name = $drop_data['name'] . '-' . $drop->DropID;
 
-        $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop->DropID, $drop_data);
-
         if ($cd_milestone->isEmpty()) {
 
             $cd_milestone = $this->edge_service->create_cd_milestone(
@@ -626,6 +645,7 @@ class SyncService {
             });
         }
         else {
+            $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop->DropID, $drop_data);
             if ($this->fattail_overwrite || $should_process) {
                 $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
 
@@ -655,7 +675,7 @@ class SyncService {
         $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
             $this->tasklist_templates[$drop_type] : [];
 
-        if (($this->fattail_overwrite || $should_process || $drop_data['milestone_id'] === '')) {
+        if (($this->fattail_overwrite || $drop_data['milestone_id'] === '')) {
 
             $cd_milestone->forAll(function(Milestone $milestone) use ($drop, $drop_milestone_property_id) {
 

@@ -126,6 +126,30 @@ class EdgeService {
     }
 
     /**
+     * Updates a workspace on CD.
+     *
+     * @param $workspace_id string
+     * @param $name string
+     * @param $custom_fields array
+     * @return boolean
+     */
+    public
+    function update_cd_workspace(
+        $workspace_id,
+        $name,
+        array $custom_fields = []
+    ) {
+        $details = new \stdClass();
+        $details->workspaceName = $name;
+        $details->customFields = $this->create_cd_custom_fields($custom_fields);
+        $path = 'workspaces/' . $workspace_id . '/updateDetails';
+
+        $http_response = $this->cd_post($path, $details);
+
+        return $http_response->isSuccessful();
+    }
+
+    /**
      * Gets a CD workspace with hash.
      *
      * @param $hash string
