@@ -126,7 +126,7 @@ class SyncService {
 
             $row = $rows[$i];
 
-            if (count($rows) === 1) {
+            if (count($row) !== count($col_map)) {
                 // Skip empty rows
                 continue;
             }
