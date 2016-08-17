@@ -184,23 +184,13 @@ class SyncService {
             ];
             $order_id = $row[$col_map['Campaign ID']];
             try {
-                // Get order details
-                $order = $this->cache->get_order($order_id);
-
-                if ($order->isEmpty()) {
-                    $order = Option::fromValue($this->fattail_service->get_order_by_id($order_id));
-                }
-
                 /* @var $cd_workspace Workspace */
-                $cd_workspace = $order->flatMap(function($order) use ($cd_account, $order_data, $order_workspace_property_id) {
-                    $this->cache->add_order($order);
-                    return $this->sync_order(
-                        $order,
-                        $cd_account,
-                        $order_data,
-                        $order_workspace_property_id
-                    );
-                })->getOrThrow(new \Exception());
+                $cd_workspace = $this->sync_order(
+                    $order_id,
+                    $cd_account,
+                    $order_data,
+                    $order_workspace_property_id
+                )->getOrThrow(new \Exception());
                 $this->diff_service->add_item(DiffService::ORDERS_TYPE, $order_id, $order_data);
             }
             catch (\Exception $e) {
@@ -216,14 +206,6 @@ class SyncService {
             // Process the drop
             $drop_id = $row[$col_map['Drop ID']];
             try {
-                // Get drop details
-                $drop = $this->fattail_service->get_drop_by_id($drop_id);
-
-                $package_drop_id = $row[$col_map['Package Drop ID']];
-                if (!empty($package_drop_id)) {
-                    $drop->ParentDropID = $package_drop_id;
-                }
-
                 $milestone_data = [
                     'name'                   => $row[$col_map['Position Path']],
                     'description'            => $row[$col_map['Drop Description']],
@@ -232,11 +214,12 @@ class SyncService {
                     'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
                     'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
                     'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
+                    'package_drop_id'        => $row[$col_map['Package Drop ID']],
                     'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']]
                 ];
 
                 $this->sync_drop(
-                    $drop,
+                    $drop_id,
                     $cd_workspace,
                     $milestone_data,
                     $drop_milestone_property_id
@@ -467,7 +450,7 @@ class SyncService {
     /**
      * Syncs a FatTail order with CD.
      *
-     * @param $order stdClass The FatTail order.
+     * @param $order_id integer The FatTail order id.
      * @param $cd_account Account The Account the workspace will be under.
      * @param $order_data array The FatTail order data.
      * @param $order_workspace_property_id integer The dynamic property id of
@@ -476,7 +459,7 @@ class SyncService {
      */
     private
     function sync_order(
-        $order,
+        $order_id,
         $cd_account,
         $order_data,
         $order_workspace_property_id
@@ -485,12 +468,12 @@ class SyncService {
         $name_parts = explode('|', $order_data['campaign_name']);
         $name = trim($name_parts[count($name_parts) - 1]);
         $custom_fields = [
-            'c_order_id'            => $order->OrderID,
+            'c_order_id'            => $order_id,
             'c_campaign_status'     => $order_data['c_campaign_status'],
             'c_campaign_start_date' => $order_data['c_campaign_start_date'],
             'c_campaign_end_date'   => $order_data['c_campaign_end_date']
         ];
-        $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID);
+        $cd_workspace = $this->cache->get_workspace_by_order_id($order_id);
             // Couldn't find it in cache so try to fetch it from iMC by hash
         if ($cd_workspace->isEmpty()) {
             $cd_workspace = $this->edge_service->get_cd_workspace($order_data['workspace_id']);
@@ -502,10 +485,10 @@ class SyncService {
                 $this->cache->add_workspace($workspace);
             }
 
-            $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID);
+            $cd_workspace = $this->cache->get_workspace_by_order_id($order_id);
         }
 
-        $should_process = $this->diff_service->is_different(DiffService::ORDERS_TYPE, $order->OrderID, $order_data);
+        $should_process = $this->diff_service->is_different(DiffService::ORDERS_TYPE, $order_id, $order_data);
         if ($cd_workspace->isEmpty()) {
             // Couldn't find a workspace so create it
             $cd_workspace = $this->edge_service->create_cd_workspace(
@@ -539,22 +522,31 @@ class SyncService {
         });
 
         if ($this->fattail_overwrite || $order_data['workspace_id'] === '') {
+            $order = $this->cache->get_order($order_id);
 
-            $cd_workspace->forAll(function(Workspace $workspace) use ($order, $order_workspace_property_id) {
+            if ($order->isEmpty()) {
+                $order = Option::fromValue($this->fattail_service->get_order_by_id($order_id));
+            }
+            $order->forAll(function($order) use ($cd_workspace, $order_workspace_property_id) {
 
-                // Only need to update Order DynamicPropertyValue
-                // if it doesn't have one
-                $dynamic_properties = $order
-                    ->OrderDynamicProperties
-                    ->DynamicPropertyValue;
-                $order->OrderDynamicProperties->DynamicPropertyValue =
-                    $this->fattail_service->update_dynamic_properties(
-                        $dynamic_properties,
-                        $order_workspace_property_id,
-                        $workspace->hash
-                    );
+                $cd_workspace->forAll(function(Workspace $workspace) use ($order, $order_workspace_property_id) {
 
-                $this->fattail_service->update_order($order);
+                    // Only need to update Order DynamicPropertyValue
+                    // if it doesn't have one
+                    $dynamic_properties = $order
+                        ->OrderDynamicProperties
+                        ->DynamicPropertyValue;
+                    $order->OrderDynamicProperties->DynamicPropertyValue =
+                        $this->fattail_service->update_dynamic_properties(
+                            $dynamic_properties,
+                            $order_workspace_property_id,
+                            $workspace->hash
+                        );
+
+                    $this->fattail_service->update_order($order);
+                });
+
+                $this->cache->add_order($order);
             });
         }
 
@@ -589,7 +581,7 @@ class SyncService {
     /**
      * Syncs a FatTail drop with CD.
      *
-     * @param $drop object The FatTail drop.
+     * @param $drop_id integer object The FatTail drop.
      * @param $cd_workspace Workspace The Workspace the milestone will be under.
      * @param $drop_data array The FatTail drop data.
      * @param $drop_milestone_property_id integer The dynamic property id
@@ -598,14 +590,14 @@ class SyncService {
      */
     private
     function sync_drop(
-        $drop,
+        $drop_id,
         $cd_workspace,
         $drop_data,
         $drop_milestone_property_id
     ) {
 
         // Try finding it in the cache
-        $cd_milestone = $this->cache->get_milestone_by_drop_id($drop->DropID);
+        $cd_milestone = $this->cache->get_milestone_by_drop_id($drop_id);
 
         if ($cd_milestone->isEmpty()) {
             // Try finding it by hash through Edge
@@ -619,16 +611,16 @@ class SyncService {
                 $this->cache->add_milestone($milestone);
             }
 
-            $cd_milestone = $this->cache->get_milestone_by_drop_id($drop->DropID);
+            $cd_milestone = $this->cache->get_milestone_by_drop_id($drop_id);
         }
 
         $custom_fields = [
-            'c_drop_id'              => $drop->DropID,
+            'c_drop_id'              => $drop_id,
             'c_custom_unit_features' => $drop_data['c_custom_unit_features'],
             'c_kpi'                  => $drop_data['c_kpi'],
             'c_drop_cost_new'        => $drop_data['c_drop_cost_new']
         ];
-        $milestone_name = $drop_data['name'] . '-' . $drop->DropID;
+        $milestone_name = $drop_data['name'] . '-' . $drop_id;
 
         if ($cd_milestone->isEmpty()) {
 
@@ -645,7 +637,7 @@ class SyncService {
             });
         }
         else {
-            $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop->DropID, $drop_data);
+            $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop_id, $drop_data);
             if ($this->fattail_overwrite || $should_process) {
                 $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
 
@@ -676,6 +668,13 @@ class SyncService {
             $this->tasklist_templates[$drop_type] : [];
 
         if (($this->fattail_overwrite || $drop_data['milestone_id'] === '')) {
+
+            $drop = $this->fattail_service->get_drop_by_id($drop_id);
+
+            $package_drop_id = $drop_data['package_drop_id'];
+            if (!empty($package_drop_id)) {
+                $drop->ParentDropID = $package_drop_id;
+            }
 
             $cd_milestone->forAll(function(Milestone $milestone) use ($drop, $drop_milestone_property_id) {
 
