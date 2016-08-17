@@ -645,7 +645,7 @@ class SyncService {
 
         if (($this->fattail_overwrite || $drop_data['milestone_id'] === '')) {
 
-            $cd_milestone->flatMap(function(Milestone $milestone) use ($drop, $drop_milestone_property_id) {
+            $cd_milestone->forAll(function(Milestone $milestone) use ($drop, $drop_milestone_property_id) {
 
                 // Only need to update Drop DynamicPropertyValue
                 // if it doesn't have one

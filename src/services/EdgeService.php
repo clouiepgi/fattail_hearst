@@ -250,7 +250,7 @@ class EdgeService {
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
 
         // Create a new milestone
-        $path = 'milestones/' . $milestone_id . '/updateDetail';
+        $path = 'milestones/' . $milestone_id . '/updateDetails';
 
         $http_response = $this->cd_post($path, $details);
 
