@@ -150,6 +150,14 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if (!$http_response->isSuccessful()) {
+            $this->logger->error('Failed to update workspace', [
+                'workspace_id'  => $workspace_id,
+                'name'          => $name,
+                'custom_fields' => $custom_fields
+            ]);
+        }
+
         return $http_response->isSuccessful();
     }
 
