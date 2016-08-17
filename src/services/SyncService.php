@@ -113,8 +113,6 @@ class SyncService {
             $col_map[$name] = $index;
         }
 
-        $this->logger->info("Preparing to sync data. This may take some time. Feel like taking a coffee break?\n");
-
         $this->prepare_cache();
 
         // Iterate over CSV and process data
