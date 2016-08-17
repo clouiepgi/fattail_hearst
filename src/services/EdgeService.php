@@ -657,7 +657,7 @@ class EdgeService {
      * Adds tasklists to a milestone using an array of tasklist hashes.
      *
      * @param $milestone Milestone The milestone to add tasklists to.
-     * @param $tasklist_template_hashes array An array of tasklist template hashes to use.
+     * @param $tasklist_template_names array An array of tasklist template names to use.
      * @param $start_date string The start date for the tasklist
      */
     public
@@ -827,9 +827,9 @@ class EdgeService {
      * Finds a Central Desktop user by first name and last name.
      * The names will be formatted to "first last" and compared.
      *
-     * @param $first_name string The first name of the user.
+     * @param $full_name string The first name of the user.
      *
-     * @return The user id.
+     * @return string The user id.
      */
     private
     function get_cd_user_id_by_name($full_name) {
