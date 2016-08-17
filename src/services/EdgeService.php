@@ -337,19 +337,13 @@ class EdgeService {
     public
     function get_cd_accounts() {
 
-        $accounts    = [];
-        $last_record = '';
-        $path        = 'accounts';
+        $accounts = [];
+        $params   = ['limit' => 100];
+        $path     = 'accounts';
 
         do {
-
-            $query_params = ['limit' => 100];
-
-            if ($last_record !== '') {
-                $query_params['lastRecord'] = $last_record;
-            }
-
-            $http_response = $this->cd_get($path, $query_params);
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
             if ($http_response->getStatusCode() !== 200) {
                 // Log and return the accounts we've processed if there is an error
@@ -363,7 +357,7 @@ class EdgeService {
 
             $json = json_decode($http_response->getContent());
 
-            if (!empty($json) && !property_exists($json, 'items')) {
+            if (!empty($json) && property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
@@ -392,8 +386,10 @@ class EdgeService {
                 );
             }
 
-            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
-        } while ($last_record !== '');
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
+            }
+        } while (count($params) > 0);
 
         return $accounts;
     }
@@ -407,19 +403,13 @@ class EdgeService {
     public
     function get_cd_workspaces($account_hash) {
 
-        $workspaces  = [];
-        $last_record = '';
-        $path        = 'accounts/' . $account_hash . '/companyWorkspaces';
+        $workspaces = [];
+        $params     = ['limit' => 100];
+        $path       = 'accounts/' . $account_hash . '/companyWorkspaces';
 
         do {
-
-            $query_params = ['limit' => 100];
-
-            if ($last_record !== '') {
-                $query_params['lastRecord'] = $last_record;
-            }
-
-            $http_response = $this->cd_get($path, $query_params);
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
             if ($http_response->getStatusCode() !== 200) {
                 // Log and return the workspaces we've processed if there is an error
@@ -467,8 +457,10 @@ class EdgeService {
                 );
             }
 
-            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
-        } while ($last_record !== '');
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
+            }
+        } while (count($params) > 0);
 
         return $workspaces;
     }
@@ -511,19 +503,13 @@ class EdgeService {
     public
     function get_cd_milestones($workspace_hash) {
 
-        $milestones  = [];
-        $last_record = '';
-        $path        = 'workspaces/' . $workspace_hash . '/milestones';
+        $milestones = [];
+        $params     = ['limit' => 100];
+        $path       = 'workspaces/' . $workspace_hash . '/milestones';
 
         do {
-
-            $query_params = ['limit' => 100];
-
-            if ($last_record !== '') {
-                $query_params['lastRecord'] = $last_record;
-            }
-
-            $http_response = $this->cd_get($path, $query_params);
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
             if ($http_response->getStatusCode() !== 200) {
                 // Log and return the workspaces we've processed if there is an error
@@ -572,8 +558,10 @@ class EdgeService {
 
             }
 
-            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
-        } while($last_record !== '');
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
+            }
+        } while(count($params) > 0);
 
         return $milestones;
     }
@@ -587,19 +575,13 @@ class EdgeService {
     public
     function get_cd_tasklists($milestone) {
 
-        $tasklists   = [];
-        $last_record = '';
-        $path        = 'milestones/' . $milestone->hash . '/tasklists';
+        $tasklists = [];
+        $params    = ['limit' => 100];
+        $path      = 'milestones/' . $milestone->hash . '/tasklists';
 
         do {
-
-            $query_params = ['limit' => 100];
-
-            if (!empty($last_record)) {
-                $query_params['lastRecord'] = $last_record;
-            }
-
-            $http_response = $this->cd_get($path, $query_params);
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
             $json = json_decode($http_response->getContent());
 
@@ -619,8 +601,10 @@ class EdgeService {
                 $tasklists[$tasklist->name] = $tasklist;
             }
 
-            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
-        } while (!empty($last_record));
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
+            }
+        } while (count($params) > 0);
 
         return $tasklists;
     }
@@ -928,4 +912,21 @@ class EdgeService {
         return $item;
     }
 
+    /**
+     * Converts a url into query parameters
+     * @param $url string
+     * @return array
+     */
+    private
+    function get_query_params($url) {
+
+        $params     = [];
+        $url_parsed = parse_url($url);
+
+        if (isset($url_parsed['query'])) {
+            parse_str($url_parsed['query'], $params);
+        }
+
+        return $params;
+    }
 }
