@@ -139,6 +139,10 @@ class EdgeService {
         $name,
         array $custom_fields = []
     ) {
+        $this->logger->info('Updating iMeetCentral workspace', [
+            'name' => $name
+        ]);
+
         $details = new \stdClass();
         $details->workspaceName = $name;
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
@@ -260,7 +264,6 @@ class EdgeService {
         $end_date,
         $custom_fields
     ) {
-
         $this->logger->info('Updating iMeetCentral milestone', [
             'name' => $name
         ]);
