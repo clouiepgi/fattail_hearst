@@ -1,6 +1,6 @@
 <?php
 /**
- * Syncronization service between Edge and FatTail.
+ * Synchronization service between Edge and FatTail.
  *
  * User: clouie
  * Date: 6/17/15
@@ -24,6 +24,7 @@ class SyncService {
     protected $edge_service    = null;
     protected $fattail_service = null;
     protected $cache           = null;
+    protected $diff_service    = null;
     protected $data_extractor  = null;
 
     private $PING_INTERVAL               = 5; // In seconds
@@ -31,7 +32,7 @@ class SyncService {
     private $WORKSPACE_DYNAMIC_PROP_NAME = 'H_CD_Workspace_ID';
     private $MILESTONE_DYNAMIC_PROP_NAME = 'H_CD_Milestone_ID';
 
-    private $tmp_dir                  = __DIR__ . '/../../tmp/';
+    private $tmp_dir                  = 'tmp/';
     private $workspace_template_hash  = 'pm';
     private $roles                    = [];
     private $tasklist_templates       = [];
@@ -44,6 +45,7 @@ class SyncService {
         EdgeService $edge_service,
         FatTailService $fattail_service,
         SyncCache $cache,
+        DiffService $diff_service,
         $tmp_dir = '',
         $workspace_template_hash = 'pm',
         $roles = [],
@@ -55,6 +57,7 @@ class SyncService {
         $this->edge_service             = $edge_service;
         $this->fattail_service          = $fattail_service;
         $this->cache                    = $cache;
+        $this->diff_service             = $diff_service;
         $this->tmp_dir                  = $tmp_dir;
         $this->workspace_template_hash  = $workspace_template_hash;
         $this->roles                    = $roles;
@@ -114,6 +117,7 @@ class SyncService {
         }
 
         $this->prepare_cache();
+        $this->diff_service->load_from_file();
 
         // Iterate over CSV and process data
         // Skip the first and last rows since they
@@ -147,6 +151,7 @@ class SyncService {
                     $client = Option::fromValue($this->fattail_service->get_client_by_id($client_id));
                 }
 
+                /* @var $cd_account Account */
                 $cd_account = $client->flatMap(function($client) {
                     $this->cache->add_client($client);
                     return $this->sync_client($client);
@@ -177,7 +182,6 @@ class SyncService {
                 'sales_rep'             => $row[$col_map['Sales Rep']],
                 'hdm_pm'                => $row[$col_map['HDM | Project Manager']]
             ];
-
             $order_id = $row[$col_map['Campaign ID']];
             try {
                 // Get order details
@@ -187,15 +191,17 @@ class SyncService {
                     $order = Option::fromValue($this->fattail_service->get_order_by_id($order_id));
                 }
 
+                /* @var $cd_workspace Workspace */
                 $cd_workspace = $order->flatMap(function($order) use ($cd_account, $order_data, $order_workspace_property_id) {
-                        $this->cache->add_order($order);
-                        return $this->sync_order(
-                            $order,
-                            $cd_account,
-                            $order_data,
-                            $order_workspace_property_id
-                        );
-                    })->getOrThrow(new \Exception());
+                    $this->cache->add_order($order);
+                    return $this->sync_order(
+                        $order,
+                        $cd_account,
+                        $order_data,
+                        $order_workspace_property_id
+                    );
+                })->getOrThrow(new \Exception());
+                $this->diff_service->add_item(DiffService::ORDERS_TYPE, $order_id, $order_data);
             }
             catch (\Exception $e) {
 
@@ -217,6 +223,7 @@ class SyncService {
                 if (!empty($package_drop_id)) {
                     $drop->ParentDropID = $package_drop_id;
                 }
+
                 $milestone_data = [
                     'name'                   => $row[$col_map['Position Path']],
                     'description'            => $row[$col_map['Drop Description']],
@@ -234,6 +241,7 @@ class SyncService {
                     $milestone_data,
                     $drop_milestone_property_id
                 )->getOrThrow(new \Exception());
+                $this->diff_service->add_item(DiffService::DROPS_TYPE, $drop_id, $milestone_data);
             }
             catch (\Exception $e) {
 
@@ -245,6 +253,8 @@ class SyncService {
                 continue;
             }
         }
+
+        $this->diff_service->save_to_file();
 
         $this->logger->info("Finished report sync.\n");
 
@@ -471,11 +481,9 @@ class SyncService {
         $order_data,
         $order_workspace_property_id
     ) {
-
         // Get the name from the campaign name
         $name_parts = explode('|', $order_data['campaign_name']);
         $name = trim($name_parts[count($name_parts) - 1]);
-
         $custom_fields = [
             'c_order_id'            => $order->OrderID,
             'c_campaign_status'     => $order_data['c_campaign_status'],
@@ -496,6 +504,7 @@ class SyncService {
 
             $cd_workspace = $this->cache->get_workspace_by_order_id($order->OrderID);
         }
+
         if ($cd_workspace->isEmpty()) {
             // Couldn't find a workspace so create it
             $cd_workspace = $this->edge_service->create_cd_workspace(
@@ -599,6 +608,9 @@ class SyncService {
             'c_drop_cost_new'        => $drop_data['c_drop_cost_new']
         ];
         $milestone_name = $drop_data['name'] . '-' . $drop->DropID;
+
+        $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop->DropID, $drop_data);
+
         if ($cd_milestone->isEmpty()) {
 
             $cd_milestone = $this->edge_service->create_cd_milestone(
@@ -614,22 +626,24 @@ class SyncService {
             });
         }
         else {
-            $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
+            if ($this->fattail_overwrite || $should_process) {
+                $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
 
-                return $this->edge_service->update_cd_milestone(
-                    $milestone->hash,
-                    $milestone_name,
-                    $drop_data['description'],
-                    $drop_data['start_date'],
-                    $drop_data['end_date'],
-                    $custom_fields
-                );
-            })->getOrElse(false);
+                    return $this->edge_service->update_cd_milestone(
+                        $milestone->hash,
+                        $milestone_name,
+                        $drop_data['description'],
+                        $drop_data['start_date'],
+                        $drop_data['end_date'],
+                        $custom_fields
+                    );
+                })->getOrElse(false);
 
-            if (!$status) {
-                $this->logger->warning(
-                    "Failed to updated a milestone. Continuing."
-                );
+                if (!$status) {
+                    $this->logger->warning(
+                        "Failed to updated a milestone. Continuing."
+                    );
+                }
             }
         }
 
@@ -641,7 +655,7 @@ class SyncService {
         $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
             $this->tasklist_templates[$drop_type] : [];
 
-        if (($this->fattail_overwrite || $drop_data['milestone_id'] === '')) {
+        if (($this->fattail_overwrite || $should_process || $drop_data['milestone_id'] === '')) {
 
             $cd_milestone->forAll(function(Milestone $milestone) use ($drop, $drop_milestone_property_id) {
 
