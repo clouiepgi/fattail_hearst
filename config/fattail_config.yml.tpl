@@ -7,7 +7,7 @@ parameters:
   fattail.report_name:
   fattail.api_namespace: http://www.FatTail.com/api
   fattail.api_version: 10
-  fattail.overwrite : false #true will overwrite data on FatTail
+  fattail.overwrite: false #true will process every item (instead of only on change) and always overwrite data on FatTail
 
   # FatTail report generation timeout (in seconds)
   fattail.report_timeout: 300

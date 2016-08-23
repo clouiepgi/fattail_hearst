@@ -11,6 +11,8 @@ use CentralDesktop\FatTail\Services\Client\EdgeClient;
 
 use DateTime;
 use JmesPath;
+use PhpOption\None;
+use PhpOption\Option;
 use Psr\Log\LoggerAwareTrait;
 
 class EdgeService {
@@ -30,13 +32,17 @@ class EdgeService {
     /**
      * Creates an account on CD.
      *
-     * @param $name The account name.
-     * @param $custom_fields An array of custom fields.
+     * @param $name string The account name.
+     * @param $custom_fields array An array of custom fields.
      *
-     * @returns A new Account
+     * @returns Option A new Account
      */
     public
     function create_cd_account($name, $custom_fields = []) {
+
+        $this->logger->info('Creating iMeetCentral account', [
+            'name' => $name
+        ]);
 
         $details = new \stdClass();
         $details->accountName = $name;
@@ -47,6 +53,16 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if (!$http_response->isSuccessful()) {
+            $this->logger->error('Failed to create iMeetCentral account', [
+                'name'          => $name,
+                'custom_fields' => $custom_fields,
+                'message'       => $http_response->getContent()
+            ]);
+
+            return None::create();
+        }
+
         $account_hash = $http_response->getContent();
 
         $account = new Account(
@@ -54,18 +70,18 @@ class EdgeService {
             $custom_fields['c_client_id']
         );
 
-        return $account;
+        return Option::fromValue($account);
     }
 
     /**
      * Creates a workspace on CD.
      *
-     * @param $account_id The CD account id this workspace will be under.
-     * @param $name The name of the workspace.
-     * @param $template_hash The hash of the workspace template.
-     * @param $custom_fields The custom fields of the workspace.
+     * @param $account_id integer The CD account id this workspace will be under.
+     * @param $name string The name of the workspace.
+     * @param $template_hash string The hash of the workspace template.
+     * @param $custom_fields array The custom fields of the workspace.
      *
-     * @return A new Workspace
+     * @return Option A new Workspace
      */
     public
     function create_cd_workspace(
@@ -74,6 +90,10 @@ class EdgeService {
         $template_hash,
         $custom_fields = []
     ) {
+        $this->logger->info('Creating iMeetCentral workspace', [
+            'name' => $name
+        ]);
+
         $details = new \stdClass();
         $details->workspaceName = $name;
         $details->workspaceType = $template_hash;
@@ -84,31 +104,44 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if (!$http_response->isSuccessful()) {
+            $this->logger->error('Failed to create iMeetCentral workspace', [
+                'name'          => $name,
+                'custom_fields' => $custom_fields,
+                'message'       => $http_response->getContent()
+            ]);
+
+            return None::create();
+        }
+
         $workspace_hash = $http_response->getContent();
 
         $workspace = new Workspace(
             $workspace_hash,
-            $name,
             $custom_fields['c_order_id']
         );
 
-        return $workspace;
+        return Option::fromValue($workspace);
     }
 
     /**
      * Updates a workspace on CD.
      *
-     * @param $workspace_id
-     * @param $name
-     * @param array $custom_fields
-     * @return mixed
+     * @param $workspace_id string
+     * @param $name string
+     * @param $custom_fields array
+     * @return boolean
      */
     public
     function update_cd_workspace(
         $workspace_id,
         $name,
-        $custom_fields = []
+        array $custom_fields = []
     ) {
+        $this->logger->info('Updating iMeetCentral workspace', [
+            'name' => $name
+        ]);
+
         $details = new \stdClass();
         $details->workspaceName = $name;
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
@@ -116,21 +149,58 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if (!$http_response->isSuccessful()) {
+            $this->logger->error('Failed to update workspace', [
+                'workspace_id'  => $workspace_id,
+                'name'          => $name,
+                'custom_fields' => $custom_fields
+            ]);
+        }
+
         return $http_response->isSuccessful();
+    }
+
+    /**
+     * Gets a CD workspace with hash.
+     *
+     * @param $hash string
+     * @return Option
+     */
+    public
+    function get_cd_workspace($hash) {
+
+        $path = "workspaces/$hash";
+
+        $http_response = $this->cd_get($path, []);
+
+        if ($http_response->getStatusCode() === 200) {
+            $workspace_data = json_decode($http_response->getContent());
+            if (property_exists($workspace_data->details, 'customFields')) {
+
+                $c_order_id = JmesPath\Env::search(
+                    "customFields[?fieldApiId=='c_order_id'].value | [0]",
+                    $workspace_data->details
+                );
+            }
+
+            return Option::fromValue(new Workspace($workspace_data->id, $workspace_data->details->workspaceName, $c_order_id));
+        }
+
+        return None::create();
     }
 
     /**
      * Puts together data in the correct format for Edge API
      * milestone creations.
      *
-     * @param $workspace_id The workspace id the milestone will be under.
-     * @param $name The name of the milestone.
-     * @param $description The description of the milestone.
-     * @param $start_date The start date of the milestone.
-     * @param $end_date The end date of the milestone.
-     * @param $custom_fields An array of custom fields.
+     * @param $workspace_id integer The workspace id the milestone will be under.
+     * @param $name string The name of the milestone.
+     * @param $description string The description of the milestone.
+     * @param $start_date string The start date of the milestone.
+     * @param $end_date string The end date of the milestone.
+     * @param $custom_fields array An array of custom fields.
      *
-     * @return A new Milestone.
+     * @return Option A new Milestone.
      */
     public
     function create_cd_milestone(
@@ -141,6 +211,10 @@ class EdgeService {
         $end_date,
         $custom_fields = []
     ) {
+        $this->logger->info('Creating iMeetCentral milestone', [
+            'name' => $name
+        ]);
+
         $details = new \stdClass();
         $details->title = $name;
         $details->startDate = $start_date;
@@ -154,29 +228,38 @@ class EdgeService {
 
         $http_response = $this->cd_post($path, $details);
 
+        if (!$http_response->isSuccessful()) {
+            $this->logger->error('Failed to create iMeetCentral milestone', [
+                'name'          => $name,
+                'custom_fields' => $custom_fields,
+                'message'       => $http_response->getContent()
+            ]);
+
+            return None::create();
+        }
+
         $milestone_hash = $http_response->getContent();
 
         $milestone = new Milestone(
             $milestone_hash,
-            $name,
             $custom_fields['c_drop_id']
         );
 
-        return $milestone;
+        return Option::fromValue($milestone);
     }
 
     /**
      * Puts together data in the correct format for Edge API
      * milestone updates.
      *
-     * @param $milestone_id The milestone id.
-     * @param $name The name of the milestone.
-     * @param $description The description of the milestone.
-     * @param $start_date The start date of the milestone.
-     * @param $end_date The end date of the milestone.
-     * @param $custom_fields An array of custom fields.
+     * @param $milestone_id string The milestone id.
+     * @param $name string The name of the milestone.
+     * @param $description string The description of the milestone.
+     * @param $start_date string The start date of the milestone.
+     * @param $end_date string The end date of the milestone.
+     * @param $custom_fields array An array of custom fields.
      *
-     * @return True on success, false otherwise
+     * @return boolean True on success, false otherwise
      */
     public
     function update_cd_milestone(
@@ -187,6 +270,10 @@ class EdgeService {
         $end_date,
         $custom_fields
     ) {
+        $this->logger->info('Updating iMeetCentral milestone', [
+            'name' => $name
+        ]);
+
         $details = new \stdClass();
         $details->title = $name;
         $details->start_date = $start_date;
@@ -196,9 +283,17 @@ class EdgeService {
         $details->customFields = $this->create_cd_custom_fields($custom_fields);
 
         // Create a new milestone
-        $path = 'milestones/' . $milestone_id . '/updateDetail';
+        $path = 'milestones/' . $milestone_id . '/updateDetails';
 
         $http_response = $this->cd_post($path, $details);
+
+        if (!$http_response->isSuccessful()) {
+            $this->logger->error('Failed to update milestone', [
+                'milestone_id'  => $milestone_id,
+                'name'          => $name,
+                'custom_fields' => $custom_fields
+            ]);
+        }
 
         return $http_response->isSuccessful();
     }
@@ -206,8 +301,8 @@ class EdgeService {
     /**
      * Gets a CD account with hash.
      *
-     * @param $hash
-     * @return Account|null
+     * @param $hash string
+     * @return Option The account
      */
     public
     function get_cd_account($hash) {
@@ -226,33 +321,37 @@ class EdgeService {
                 );
             }
 
-            return new Account($account_data->id, $c_client_id);
+            return Option::fromValue(new Account($account_data->id, $c_client_id));
         }
 
-        return null;
+        return None::create();
     }
 
     /**
      * Gets all the cd accounts.
      *
-     * @return An array of Accounts.
+     * @return array An array of Accounts.
      */
     public
     function get_cd_accounts() {
 
-        $accounts    = [];
-        $last_record = '';
-        $path        = 'accounts';
+        $accounts = [];
+        $params   = ['limit' => 100];
+        $path     = 'accounts';
 
         do {
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
-            $query_params = ['limit' => 100];
+            if ($http_response->getStatusCode() !== 200) {
+                // Log and return the accounts we've processed if there is an error
+                // trying to get them
+                $this->logger->error('Failed to retrieve iMeetCentral accounts', [
+                    'message' => $http_response->getContent()
+                ]);
 
-            if ($last_record !== '') {
-                $query_params['lastRecord'] = $last_record;
+                return $accounts;
             }
-
-            $http_response = $this->cd_get($path, $query_params);
 
             $json = json_decode($http_response->getContent());
 
@@ -285,66 +384,41 @@ class EdgeService {
                 );
             }
 
-            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
-        } while ($last_record !== '');
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
+            }
+        } while (count($params) > 0);
 
         return $accounts;
     }
 
     /**
-     * Gets a CD workspace with hash.
-     *
-     * @param $hash
-     * @return Workspace|null
-     */
-    public
-    function get_cd_workspace($hash) {
-
-        $path = "workspaces/$hash";
-
-        $http_response = $this->cd_get($path, []);
-
-        if ($http_response->getStatusCode() === 200) {
-            $workspace_data = json_decode($http_response->getContent());
-            if (property_exists($workspace_data->details, 'customFields')) {
-
-                $c_order_id = JmesPath\Env::search(
-                    "customFields[?fieldApiId=='c_order_id'].value | [0]",
-                    $workspace_data->details
-                );
-            }
-
-            return new Workspace($workspace_data->id, $workspace_data->details->workspaceName, $c_order_id);
-        }
-
-        return null;
-    }
-
-    /**
      * Gets all the cd workspaces.
      *
-     * @param $account_hash The account hash of the workspaces.
-     * @return An array of workspaces belonging to account.
+     * @param $account_hash string The account hash of the workspaces.
+     * @return array An array of workspaces belonging to account.
      */
     public
-    function get_cd_workspaces($account_hash = null) {
+    function get_cd_workspaces($account_hash) {
 
-        $workspaces  = [];
-        $last_record = '';
-        $path = 'workspaces';
-        if ($account_hash) {
-            $path = 'accounts/' . $account_hash . '/workspaces';
-        }
+        $workspaces = [];
+        $params     = ['limit' => 100];
+        $path       = 'accounts/' . $account_hash . '/companyWorkspaces';
 
         do {
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
-            $query_params = ['limit' => 100];
+            if ($http_response->getStatusCode() !== 200) {
+                // Log and return the workspaces we've processed if there is an error
+                // trying to get them
+                $this->logger->error('Failed to retrieve iMeetCentral workspaces', [
+                    'message'      => $http_response->getContent(),
+                    'account hash' => $account_hash
+                ]);
 
-            if ($last_record !== '') {
-                $query_params['lastRecord'] = $last_record;
+                return $workspaces;
             }
-
-            $http_response = $this->cd_get($path, $query_params);
 
             $json = json_decode($http_response->getContent());
             if (!empty($json) && property_exists($json, 'items')) {
@@ -377,27 +451,28 @@ class EdgeService {
 
                 $workspaces[$c_order_id] = new Workspace(
                     $workspace_data->id,
-                    $workspace_data->details->workspaceName,
                     $c_order_id
                 );
             }
 
-            $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
-        } while ($last_record !== '');
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
+            }
+        } while (count($params) > 0);
 
         return $workspaces;
     }
 
     /**
-     * Gets a CD milestone with hash.
+     * Gets a milestone.
      *
-     * @param $hash
-     * @return Milestone|null
+     * @param $milestone_hash string The milestone hash
+     * @return Option The milestone
      */
     public
-    function get_cd_milestone($hash) {
+    function get_cd_milestone($milestone_hash) {
 
-        $path = "milestones/$hash";
+        $path = "milestones/$milestone_hash";
 
         $http_response = $this->cd_get($path, []);
 
@@ -411,37 +486,42 @@ class EdgeService {
                 );
             }
 
-            return new Milestone($milestone_data->id, $milestone_data->details->title, $c_drop_id);
+            return Option::fromValue(new Milestone($milestone_data->id, $c_drop_id));
         }
 
-        return null;
+        return None::create();
     }
 
     /**
      * Gets all the cd milestones.
      *
-     * @param $workspace_hash The CD workspace hash
-     * @return An array of Milestones belonging to workspace
+     * @param $workspace_hash string The CD workspace hash
+     * @return array An array of Milestones belonging to workspace
      */
     public
     function get_cd_milestones($workspace_hash) {
 
-        $milestones  = [];
-        $last_record = '';
-        $path        = 'workspaces/' . $workspace_hash . '/milestones';
+        $milestones = [];
+        $params     = ['limit' => 100];
+        $path       = 'workspaces/' . $workspace_hash . '/milestones';
 
         do {
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
-            $query_params = ['limit' => 100];
+            if ($http_response->getStatusCode() !== 200) {
+                // Log and return the workspaces we've processed if there is an error
+                // trying to get them
+                $this->logger->error('Failed to retrieve iMeetCentral milestones', [
+                    'message'      => $http_response->getContent(),
+                    'workspace hash' => $workspace_hash
+                ]);
 
-            if ($last_record !== '') {
-                $query_params['lastRecord'] = $last_record;
+                return $milestones;
             }
 
-            $http_response = $this->cd_get($path, $query_params);
-
             $json = json_decode($http_response->getContent());
-            if ($json && property_exists($json, 'items')) {
+            if (!empty($json) && property_exists($json, 'items')) {
                 $data = $json->items;
             }
             else {
@@ -466,24 +546,19 @@ class EdgeService {
 
                 $milestone = new Milestone(
                     $milestone_data->id,
-                    $milestone_data->details->title,
                     $c_drop_id
                 );
 
+                // Get the tasklists for the milestone
+                $milestone->set_tasklists($this->get_cd_tasklists($milestone));
+
                 $milestones[$c_drop_id] = $milestone;
-
             }
 
-            // For some reason the lastRecord
-            // field doesn't exists when lastRecord is empty
-            // unlike the other endpoints
-            if (property_exists($json, 'lastRecord')) {
-                $last_record = $json->lastRecord;
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
             }
-            else {
-                break;
-            }
-        } while($last_record !== '');
+        } while(count($params) > 0);
 
         return $milestones;
     }
@@ -497,23 +572,17 @@ class EdgeService {
     public
     function get_cd_tasklists($milestone) {
 
-        $tasklists   = [];
-        $last_record = '';
-        $path        = 'milestones/' . $milestone->hash . '/tasklists';
+        $tasklists = [];
+        $params    = ['limit' => 100];
+        $path      = 'milestones/' . $milestone->hash . '/tasklists';
 
         do {
-
-            $query_params = ['limit' => 100];
-
-            if (!empty($last_record)) {
-                $query_params['lastRecord'] = $last_record;
-            }
-
-            $http_response = $this->cd_get($path, $query_params);
+            $http_response = $this->cd_get($path, $params);
+            $params = [];
 
             $json = json_decode($http_response->getContent());
 
-            if (!empty($json) && !property_exists($json, 'items')) {
+            if (!property_exists($json, 'items')) {
 
                 // No more items to process so exit
                 break;
@@ -529,13 +598,10 @@ class EdgeService {
                 $tasklists[$tasklist->name] = $tasklist;
             }
 
-            if (property_exists($json, 'lastRecord') && !empty($json->lastRecord)) {
-                $last_record = $json->lastRecord;
+            if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                $params = $this->get_query_params($json->links->next);
             }
-            else {
-                $last_record = '';
-            }
-        } while (!empty($last_record));
+        } while (count($params) > 0);
 
         return $tasklists;
     }
@@ -544,10 +610,10 @@ class EdgeService {
      * Assigns a user based on their full name to
      * a role by its name.
      *
-     * @param $full_name The user's full name.
-     * @param $role_hash The role's hash.
-     * @param $workspace_hash The workspace's hash.
-     * @param $role_name THe role's name.
+     * @param $full_name string The user's full name.
+     * @param $role_hash string The role's hash.
+     * @param $workspace_hash string The workspace's hash.
+     * @param $role_name string The role's name.
      */
     public
     function assign_user_to_role($full_name, $role_hash, $workspace_hash, $role_name) {
@@ -587,9 +653,9 @@ class EdgeService {
     /**
      * Adds tasklists to a milestone using an array of tasklist hashes.
      *
-     * @param $milestone_hash The milestone to add tasklists to.
-     * @param $tasklist_template_hashes An array of tasklist template hashes to use.
-     * @param $start_date The start date for the tasklist
+     * @param $milestone Milestone The milestone to add tasklists to.
+     * @param $tasklist_template_names array An array of tasklist template names to use.
+     * @param $start_date string The start date for the tasklist
      */
     public
     function add_tasklists_to_milestone($milestone, $tasklist_template_names, $start_date) {
@@ -632,7 +698,7 @@ class EdgeService {
                     );
                 }
                 else {
-                    $this->logger->warn(
+                    $this->logger->warning(
                         'Failed to find tasklist template',
                         [
                             'Name'           => $tasklist_template_name,
@@ -696,10 +762,10 @@ class EdgeService {
     /**
      * Makes POST requests to Edge.
      *
-     * @param $path The path for the resource
-     * @param $details An array/object representing the entity data
+     * @param $path string The path for the resource
+     * @param $details array|object An array/object representing the entity data
      *
-     * @return A Psr\Http\Message\ResponseInterface object
+     * @return object A Psr\Http\Message\ResponseInterface object
      */
     protected
     function cd_post($path, $details) {
@@ -727,10 +793,10 @@ class EdgeService {
     /**
      * Makes GET requests to Edge.
      *
-     * @param $path The path for the resource
-     * @param $query_params An array/object representing the entity data
+     * @param $path string THe path for the resource
+     * @param $query_params array|object An array/object representing the entity data
      *
-     * @return A Psr\Http\Message\ResponseInterface object
+     * @return object response
      */
     protected
     function cd_get($path, $query_params) {
@@ -758,34 +824,28 @@ class EdgeService {
      * Finds a Central Desktop user by first name and last name.
      * The names will be formatted to "first last" and compared.
      *
-     * @param $first_name The first name of the user.
+     * @param $full_name string The first name of the user.
      *
-     * @return The user id.
+     * @return string The user id.
      */
     private
     function get_cd_user_id_by_name($full_name) {
 
         $users = $this->cache->get_users();
 
-        if ($users === null || empty($user)) {
+        if ($users === null) {
             // Cache hasn't been set yet
 
-            $last_record = '';
-            $path        = 'users';
-            $users       = [];
+            $params = ['limit' => 100];
+            $path   = 'users';
+            $users  = [];
 
             do {
-
-                $query_params = ['limit' => 100];
-
-                if ($last_record !== '') {
-                    $query_params['lastRecord'] = $last_record;
-                }
-
-                $http_response = $this->cd_get($path, $query_params);
+                $http_response = $this->cd_get($path, $params);
+                $params = [];
 
                 $json = json_decode($http_response->getContent());
-                if (!empty($json) && property_exists($json, 'items')) {
+                if (property_exists($json, 'items')) {
                     foreach ($json->items as $user) {
                         $name         = strtolower($user->details->fullName);
                         $users[$name] = $user->id;
@@ -795,13 +855,16 @@ class EdgeService {
                     break;
                 }
 
-                $last_record = property_exists($json, 'lastRecord') ? $json->lastRecord : '';
-            } while ($last_record !== '');
+                if (property_exists($json, 'links') && property_exists($json->links, 'next')) {
+                    $params = $this->get_query_params($json->links->next);
+                }
+            } while (count($params) > 0);
 
             $this->cache->set_users($users);
         }
 
         $full_name_lower = strtolower($full_name);
+
         if (array_key_exists($full_name_lower, $users)) {
 
             return $users[$full_name_lower];
@@ -814,9 +877,9 @@ class EdgeService {
      * Builds the custom fields for use with
      * the Edge API call.
      *
-     * @param $custom_fields An array of custom field and value pairs.
+     * @param $custom_fields array An array of custom field and value pairs.
      *
-     * @return An array of objects representing custom fields.
+     * @return array An array of objects representing custom fields.
      */
     private
     function create_cd_custom_fields($custom_fields) {
@@ -842,4 +905,21 @@ class EdgeService {
         return $item;
     }
 
+    /**
+     * Converts a url into query parameters
+     * @param $url string
+     * @return array
+     */
+    private
+    function get_query_params($url) {
+
+        $params     = [];
+        $url_parsed = parse_url($url);
+
+        if (isset($url_parsed['query'])) {
+            parse_str($url_parsed['query'], $params);
+        }
+
+        return $params;
+    }
 }

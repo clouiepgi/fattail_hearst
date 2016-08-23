@@ -1,6 +1,6 @@
 <?php
 /**
- * Syncronization service between Edge and FatTail.
+ * Synchronization service between Edge and FatTail.
  *
  * User: clouie
  * Date: 6/17/15
@@ -9,9 +9,14 @@
 
 namespace CentralDesktop\FatTail\Services;
 
+use CentralDesktop\FatTail\Entities\Account;
+use CentralDesktop\FatTail\Entities\Milestone;
+use CentralDesktop\FatTail\Entities\Workspace;
 use JmesPath;
 use League\Csv\Reader;
+use PhpOption\Option;
 use Psr\Log\LoggerAwareTrait;
+use stdClass;
 
 class SyncService {
     use LoggerAwareTrait;
@@ -63,13 +68,203 @@ class SyncService {
     }
 
     /**
+     * Syncs Edge and FatTail.
+     * @param $report_name string The name of the report
+     */
+    public
+    function sync($report_name = '') {
+
+        $this->logger->info("Starting report sync.\n");
+
+        $report = $this->fattail_service
+                  ->get_saved_report_info_by_name($report_name);
+
+        if ($report === null) {
+            $this->logger->error("Unable to find requested report. Exiting.\n");
+            exit;
+        }
+
+        $start_date = date('m/d/Y');
+        $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
+
+        $csv_path = $this->download_report_csv(
+            $report,
+            $this->tmp_dir,
+            $start_date,
+            $end_date
+        );
+        $reader = Reader::createFromPath($csv_path);
+        $rows = $reader->fetchAll();
+
+        $order_workspace_property_id = $this
+                                       ->fattail_service
+                                       ->get_order_dynamic_property_id(
+                                           $this->WORKSPACE_DYNAMIC_PROP_NAME
+                                       );
+
+        $drop_milestone_property_id = $this
+                                      ->fattail_service
+                                      ->get_drop_dynamic_property_id(
+                                          $this->MILESTONE_DYNAMIC_PROP_NAME
+                                      );
+
+        // Create mapping of column name with column index
+        // Not necessary, but makes it easier to work with the data.
+        // Can remove if optimization issues arise because of this
+        $col_map = [];
+        foreach ($rows[0] as $index => $name) {
+            $col_map[$name] = $index;
+        }
+
+        $this->prepare_cache();
+        $this->diff_service->load_from_file();
+
+        // Iterate over CSV and process data
+        // Skip the first and last rows since they
+        // don't have the data we need
+        for ($i = 1, $len = count($rows); $i < $len; $i++) {
+
+            $row = $rows[$i];
+
+            if (count($row) !== count($col_map)) {
+                // Skip empty rows
+                continue;
+            }
+
+            if ($this->filter_row($row, $col_map)) {
+                $this->logger->info('Skipping item', [
+                    'Drop ID'   => $row[$col_map['Drop ID']],
+                    'Drop Name' => $row[$col_map['Position Path']],
+                ]);
+                continue;
+            }
+
+            $this->logger->info("Processing next item. Please wait.");
+
+            // Process the client
+            // Get client details
+            $client_id = $row[$col_map['Client ID']];
+            try {
+                $client = $this->cache->get_client($client_id);
+
+                if ($client->isEmpty()) {
+                    $client = Option::fromValue($this->fattail_service->get_client_by_id($client_id));
+                }
+
+                /* @var $cd_account Account */
+                $cd_account = $client->flatMap(function($client) {
+                    $this->cache->add_client($client);
+                    return $this->sync_client($client);
+                })->getOrThrow(new \Exception());
+
+            }
+            catch (\Exception $e) {
+
+                $this->logger->error(
+                    'Failed to sync client. Skipping the workspace and milestone.',
+                    [
+                        'Client ID'   => $client_id,
+                        'Campaign ID' => $row[$col_map['Campaign ID']],
+                        'Drop ID'     => $row[$col_map['Drop ID']],
+                    ]
+                );
+
+                continue;
+            }
+
+            // Process the order
+            $order_data = [
+                'campaign_name'         => $row[$col_map['Campaign Name']],
+                'c_campaign_status'     => $row[$col_map['IO Status']],
+                'c_campaign_start_date' => $row[$col_map['Campaign Start Date']],
+                'c_campaign_end_date'   => $row[$col_map['Campaign End Date']],
+                'workspace_id'          => $row[$col_map['(Campaign) CD Workspace ID']],
+                'sales_rep'             => $row[$col_map['Sales Rep']],
+                'c_hdm_pm'              => $row[$col_map['HDM | Project Manager']],
+                'c_hdm_tam'             => $row[$col_map['Operations Contact']],
+                'c_total_order_revenue' => $row[$col_map['Total Campaign Value']],
+                'c_account_manager'     => $row[$col_map['HDM | Account Manager']],
+            ];
+            $order_id = $row[$col_map['Campaign ID']];
+            try {
+                /* @var $cd_workspace Workspace */
+                $cd_workspace = $this->sync_order(
+                    $order_id,
+                    $cd_account,
+                    $order_data,
+                    $order_workspace_property_id
+                )->getOrThrow(new \Exception());
+                $this->diff_service->add_item(DiffService::ORDERS_TYPE, $order_id, $order_data);
+            }
+            catch (\Exception $e) {
+
+                $this->logger->error(
+                    'Failed to sync order. Skipping the milestone.',
+                    ['Order ID' => $order_id]
+                );
+
+                continue;
+            }
+
+            //If Custom Unit is set and equal to true, sync milestones
+            if(isset($col_map['(Drop) Custom Unit']) &&
+                strtolower($row[$col_map['(Drop) Custom Unit']]) == "true") {
+
+                // Process the drop
+                $drop_id = $row[$col_map['Drop ID']];
+                try {
+                    $milestone_data = [
+                        'name'                   => $row[$col_map['Position Path']],
+                        'description'            => $row[$col_map['Drop Description']],
+                        'start_date'             => $row[$col_map['Start Date']],
+                        'end_date'               => $row[$col_map['End Date']],
+                        'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
+                        'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
+                        'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
+                        'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']],
+                        'package_drop_id'        => $row[$col_map['Package Drop ID']],
+                    ];
+
+                    $this->sync_drop(
+                        $drop_id,
+                        $cd_workspace,
+                        $milestone_data,
+                        $drop_milestone_property_id
+                    )->getOrThrow(new \Exception());
+                    $this->diff_service->add_item(DiffService::DROPS_TYPE, $drop_id, $milestone_data);
+                } catch (\Exception $e) {
+
+                    $this->logger->error(
+                        'Failed to sync drop. Continuing.',
+                        ['Drop ID' => $drop_id]
+                    );
+
+                    continue;
+                }
+            }
+        }
+
+        $this->diff_service->save_to_file();
+
+        $this->logger->info("Finished report sync.\n");
+
+        $this->logger->info("Cleaning up temporary CSV report.\n");
+        $this->clean_up($this->tmp_dir);
+        $this->logger->info("Finished cleaning up CSV report.\n");
+
+        $this->logger->info("Done.\n");
+    }
+
+    /**
      * Downloads a CSV report from FatTail.
      *
-     * @param $report The report that will
+     * @param $report object The report that will
      *        have it's CSV file generated.
-     * @param $dir The system directory to save the CSV to.
+     * @param $dir string The system directory to save the CSV to.
+     * @param $start_date string The start date in m/d/Y format
+     * @param $end_date string The end date in m/d/Y format
      *
-     * @return System path to the CSV file.
+     * @return string System path to the CSV file.
      */
     protected
     function download_report_csv(
@@ -173,7 +368,7 @@ class SyncService {
      * Cleans up (deletes) all CSV files within the directory
      * and then deletes the directory.
      *
-     * @param $dir The directory to clean up.
+     * @param $dir string The directory to clean up.
      */
     protected
     function clean_up($dir = '') {
@@ -191,67 +386,73 @@ class SyncService {
      */
     private
     function prepare_cache() {
+        $this->logger->info('Starting to prepare cache');
 
-        // Populate local copy of all workspace in case a search is needed
+        // Fetch all FatTail clients into an associative array by client id for easy lookup
+        $this->logger->info('Caching FatTail clients');
+        $this->cache->set_clients($this->fattail_service->get_clients());
+
+        // Only need to cache accounts and workspaces since they're repeated
+        $this->logger->info('Caching iMeetCentral accounts and workspaces');
         $workspaces = [];
-        foreach ($this->edge_service->get_cd_accounts() as $cd_account) {
-            $this->cache->add_account($cd_account);
-            $workspaces = array_merge($workspaces, $this->edge_service->get_cd_workspaces($cd_account->hash));
-            $cd_account->set_workspaces($workspaces);
+        $accounts = $this->edge_service->get_cd_accounts();
+        foreach ($accounts as $account) {
+            $workspaces = array_merge($workspaces, $this->edge_service->get_cd_workspaces($account->hash));
         }
         $this->cache->set_workspaces($workspaces);
+        $this->cache->set_accounts($accounts);
+
+        $this->logger->info('Caching iMeetCentral task list templates');
+        $this->cache->set_tasklist_templates(
+            $this->edge_service->get_cd_tasklist_templates()
+        );
+
+        $this->logger->info('Finished preparing cache');
     }
 
     /**
      * Syncs a FatTail client with CD.
      *
-     * @param $client The FatTail Client.
-     * @return An Account representing the CD account.
+     * @param $client object The FatTail Client.
+     * @return Option An Account representing the CD account.
      */
     private
     function sync_client($client) {
 
+        $created = false;
         // Process the client
-
-        // Check if exists in cache
+        $custom_fields = [
+            'c_client_id' => $client->ClientID
+        ];
         $cd_account = $this->cache->find_account_by_c_client_id(
             $client->ClientID
         );
-
-        if ($cd_account === null) {
-            // See if account exists in cd
+        if ($cd_account->isEmpty()) {
+            // Try fetching by hash from iMC API
             $cd_account = $this->edge_service->get_cd_account($client->ExternalID);
-
-            if ($cd_account !== null) {
-                $this->cache->add_account($cd_account);
-            }
         }
-
-        if ($cd_account === null) {
-
-            // Create a new CD Account
-            $custom_fields = [
-                'c_client_id' => $client->ClientID
-            ];
+        if ($cd_account->isEmpty()) {
+            // Create a new CD Account if we couldn't find an account
             $cd_account = $this->edge_service->create_cd_account(
                 $client->Name,
                 $custom_fields
             );
-
-            $this->cache->add_account($cd_account);
+            $cd_account->forAll(function(Account $account) use (&$created) {
+               $created = true;
+            });
         }
 
-        if (
-            $this->fattail_overwrite ||
-            !$this->is_valid_hash($client->ExternalID)
-        ) {
-            // Update the FatTail client external id
-            // if it doesn't have a value
-            $client->ExternalID = $cd_account->hash;
+        $cd_account->forAll(function(Account $account) {
+            $this->cache->add_account($account);
+        });
 
-            // Update the FatTail Client with the
-            // CD Account hash
-            $this->fattail_service->update_client($client);
+        if ($this->fattail_overwrite || $created || $client->ExternalID === '') {
+            $cd_account->forAll(function(Account $account) use ($client) {
+                // Update the FatTail client external id
+                // if it doesn't have a value
+                $client->ExternalID = $account->hash;
+                $this->fattail_service->update_client($client);
+            });
         }
 
         return $cd_account;
@@ -260,12 +461,12 @@ class SyncService {
     /**
      * Syncs a FatTail order with CD.
      *
-     * @param $order_id The FatTail order id.
-     * @param $cd_account The Account the workspace will be under.
-     * @param $order_data The FatTail order data.
-     * @param $order_workspace_property_id The dynamic property id of
+     * @param $order_id integer The FatTail order id.
+     * @param $cd_account Account The Account the workspace will be under.
+     * @param $order_data array The FatTail order data.
+     * @param $order_workspace_property_id integer The dynamic property id of
      *                                     the FatTail order.
-     * @return A Workspace representing the CD workspace
+     * @return Option A Workspace representing the CD workspace
      */
     private
     function sync_order(
@@ -274,165 +475,169 @@ class SyncService {
         $order_data,
         $order_workspace_property_id
     ) {
-
+        $created = false;
         // Get the name from the campaign name
         $name_parts = explode('|', $order_data['campaign_name']);
         $name = trim($name_parts[count($name_parts) - 1]);
-
-        $cd_workspace = $cd_account->find_workspace_by_c_order_id(
-            $order_id
-        );
-
-        if ($cd_workspace === null) {
-            $cd_workspace = $this->cache->get_workspace_hash_by_name($name);
-
-            if ($cd_workspace !== null) {
-                $cd_account->add_workspace($cd_workspace);
-            }
-        }
-
-        if ($cd_workspace === null) {
-            // See if workspace exists in cd
+        $custom_fields = [
+            'c_order_id'            => $order_id,
+            'c_campaign_status'     => $order_data['c_campaign_status'],
+            'c_campaign_start_date' => $order_data['c_campaign_start_date'],
+            'c_campaign_end_date'   => $order_data['c_campaign_end_date']
+        ];
+        $cd_workspace = $this->cache->get_workspace_by_order_id($order_id);
+            // Couldn't find it in cache so try to fetch it from iMC by hash
+        if ($cd_workspace->isEmpty()) {
             $cd_workspace = $this->edge_service->get_cd_workspace($order_data['workspace_id']);
-
-            if ($cd_workspace !== null) {
-                $cd_account->add_workspace($cd_workspace);
+        }
+        if ($cd_workspace->isEmpty()) {
+            // Couldn't find it in cache or by iMC API hash so try searching under parent account
+            foreach ($this->edge_service->get_cd_workspaces($cd_account->hash) as $workspace) {
+                /* @var $workspace Workspace */
+                $this->cache->add_workspace($workspace);
             }
+
+            $cd_workspace = $this->cache->get_workspace_by_order_id($order_id);
         }
 
-        $order_checksum_old = $this->diff_service->get_loaded_checksum(DiffService::ORDERS_TYPE, $order_id);
-        $order_checksum = $this->diff_service->generate_checksum($order_data);
+        $should_process = $this->diff_service->is_different(DiffService::ORDERS_TYPE, $order_id, $order_data);
+        if ($cd_workspace->isEmpty()) {
+            // Couldn't find a workspace so create it
+            $cd_workspace = $this->edge_service->create_cd_workspace(
+                $cd_account->hash,
+                $name,
+                $this->workspace_template_hash,
+                $custom_fields
+            );
+            $cd_workspace->forAll(function(Workspace $workspace) use (&$created) {
+                $created = true;
+            });
+        }
+        else {
+            if ($this->fattail_overwrite || $should_process) {
+                $status = $cd_workspace->map(function(Workspace $workspace) use ($custom_fields, $name) {
 
-        if (is_null($order_checksum_old) || $order_checksum_old !== $order_checksum) {
-            // We have a new or changed order
-            $order = $this->fattail_service->get_order_by_id($order_id);
-            $custom_fields = [
-                'c_order_id'            => $order->OrderID,
-                'c_campaign_status'     => $order_data['c_campaign_status'],
-                'c_campaign_start_date' => $order_data['c_campaign_start_date'],
-                'c_campaign_end_date'   => $order_data['c_campaign_end_date'],
-                'c_campaign_end_date'   => $order_data['c_campaign_end_date'],
-                'c_total_order_revenue' => $order_data['c_total_order_revenue'],
-            ];
+                    return $this->edge_service->update_cd_workspace(
+                        $workspace->hash,
+                        $name,
+                        $custom_fields
+                    );
+                })->getOrElse(false);
 
-            if ($cd_workspace === null) {
-            
-                // Create a new workspace if it doesn't exist
-                $cd_workspace = $this->edge_service->create_cd_workspace(
-                    $cd_account->hash,
-                    $name,
-                    $this->workspace_template_hash,
-                    $custom_fields
-                );
-            
-                $this->logger->info("Create a New Workspace.\n");
-                $this->logger->info(print_r($cd_workspace));
-                $cd_account->add_workspace($cd_workspace);
-            } else {
-            
-                // Update the workspace if it exists
-                $status = $this->edge_service->update_cd_workspace(
-                    $cd_workspace->hash,
-                    $name,
-                    $custom_fields
-                );
-                $this->logger->info("Update an Existing Workspace.\n");
-                $this->logger->info(print_r($status));
                 if (!$status) {
                     $this->logger->warning(
                         "Failed to updated a workspace. Continuing."
                     );
                 }
             }
+        }
 
-            if (
-                $this->fattail_overwrite ||
-                !$this->is_valid_hash($order_data['workspace_id'])
-            ) {
-            
-                // Only need to update Order DynamicPropertyValue
-                // if it doesn't have one
-                $dynamic_properties = $order
-                    ->OrderDynamicProperties
-                    ->DynamicPropertyValue;
-                $order->OrderDynamicProperties->DynamicPropertyValue =
-                    $this->fattail_service->update_dynamic_properties(
-                        $dynamic_properties,
-                        $order_workspace_property_id,
-                        $cd_workspace->hash
+        $cd_workspace->forAll(function(Workspace $workspace) use (&$cd_account) {
+            $this->cache->add_workspace($workspace);
+        });
+
+        if ($this->fattail_overwrite || $created || $order_data['workspace_id'] === '') {
+            $order = $this->cache->get_order($order_id);
+
+            if ($order->isEmpty()) {
+                $order = Option::fromValue($this->fattail_service->get_order_by_id($order_id));
+            }
+            $order->forAll(function($order) use ($cd_workspace, $order_workspace_property_id) {
+
+                $cd_workspace->forAll(function(Workspace $workspace) use ($order, $order_workspace_property_id) {
+
+                    // Only need to update Order DynamicPropertyValue
+                    // if it doesn't have one
+                    $dynamic_properties = $order
+                        ->OrderDynamicProperties
+                        ->DynamicPropertyValue;
+                    $order->OrderDynamicProperties->DynamicPropertyValue =
+                        $this->fattail_service->update_dynamic_properties(
+                            $dynamic_properties,
+                            $order_workspace_property_id,
+                            $workspace->hash
+                        );
+
+                    $this->fattail_service->update_order($order);
+                });
+
+                $this->cache->add_order($order);
+            });
+        }
+
+        if ($this->fattail_overwrite || $should_process) {
+            $cd_workspace->forAll(function(Workspace $workspace) use ($order_data) {
+
+                // Assign Salesrole
+                if (!empty($order_data['sales_rep'])) {
+                    $sales_rep_name = $this->format_name($order_data['sales_rep']);
+                    $this->edge_service->assign_user_to_role(
+                        $sales_rep_name,
+                        $this->roles['sales_role_hash'],
+                        $workspace->hash,
+                        'Sales Rep'
                     );
-            
-                $this->fattail_service->update_order($order);
-            }
+                }
 
-            // Assign Salesrole
-            if (!empty($order_data['sales_rep'])) {
-                $sales_rep_name = $this->format_name($order_data['sales_rep']);
-                $this->edge_service->assign_user_to_role(
-                    $sales_rep_name,
-                    $this->roles['sales_role_hash'],
-                    $cd_workspace->hash,
-                    'Sales Rep'
-                );
-            }
 
-            // Assign HDM PM
-            if (!empty($order_data['c_hdm_pm'])) {
-                $hdm_pm_name = $this->format_name($order_data['c_hdm_pm']);
-                $this->edge_service->assign_user_to_role(
-                    $hdm_pm_name,
-                    $this->roles['hdm_pm_role_hash'],
-                    $cd_workspace->hash,
-                    'HDM Project Manager'
-                );
-            }
-            
-            // Assign TAM
-            if (!empty($order_data['c_hdm_tam'])) {
-                $this->edge_service->assign_user_to_role(
-                    $order_data['c_hdm_tam'],
-                    $this->roles['tam_role_hash'],
-                    $cd_workspace->hash,
-                    'TAM'
-                );
-            }
-            
-            // Assign Account Manager
-            if (!empty($order_data['c_account_manager'])) {
-                $hdm_tam_name = $this->format_name($order_data['c_account_manager']);
-                $this->edge_service->assign_user_to_role(
-                    $hdm_tam_name,
-                    $this->roles['account_manager_hash'],
-                    $cd_workspace->hash,
-                    'Account Manager'
-                );
-            }
-            
-            // HDM Ad Studio
-            $order_data['hdm_ad_studio'] = array("Macgillis, Joe", "Mansour, Sam");
-            foreach($order_data['hdm_ad_studio'] as $name){
-              if (!empty($name)) {
-                $hdm_ad_studio = $this->format_name($name); 
-                $this->edge_service->assign_user_to_role(
-                    $hdm_ad_studio,
-                    $this->roles['hdm_ad_studio'],
-                    $cd_workspace->hash,
-                    'HDM Ad Studio'
-                );
-              }
-            }
-            
-            // Head of PM
-            $order_data['head_pm'] = "Keltz, Heather";
-            if (!empty($order_data['head_pm'])) {
-                $head_pm = $this->format_name($order_data['head_pm']);
-                $this->edge_service->assign_user_to_role(
-                    $head_pm,
-                    $this->roles['head_pm'],
-                    $cd_workspace->hash,
-                    'Head of PM'
-                );
-            }
+                // Assign HDM PM
+                if (!empty($order_data['c_hdm_pm'])) {
+                    $hdm_pm_name = $this->format_name($order_data['c_hdm_pm']);
+                    $this->edge_service->assign_user_to_role(
+                        $hdm_pm_name,
+                        $this->roles['hdm_pm_role_hash'],
+                        $workspace->hash,
+                        'HDM Project Manager'
+                    );
+                }
+
+                // Assign TAM
+                if (!empty($order_data['c_hdm_tam'])) {
+                    $this->edge_service->assign_user_to_role(
+                        $order_data['c_hdm_tam'],
+                        $this->roles['tam_role_hash'],
+                        $workspace->hash,
+                        'TAM'
+                    );
+                }
+
+                // Assign Account Manager
+                if (!empty($order_data['c_account_manager'])) {
+                    $hdm_tam_name = $this->format_name($order_data['c_account_manager']);
+                    $this->edge_service->assign_user_to_role(
+                        $hdm_tam_name,
+                        $this->roles['account_manager_hash'],
+                        $workspace->hash,
+                        'Account Manager'
+                    );
+                }
+
+                // HDM Ad Studio
+                $order_data['hdm_ad_studio'] = array("Macgillis, Joe", "Mansour, Sam");
+                foreach($order_data['hdm_ad_studio'] as $name){
+                    if (!empty($name)) {
+                        $hdm_ad_studio = $this->format_name($name);
+                        $this->edge_service->assign_user_to_role(
+                            $hdm_ad_studio,
+                            $this->roles['hdm_ad_studio'],
+                            $workspace->hash,
+                            'HDM Ad Studio'
+                        );
+                    }
+                }
+
+                // Head of PM
+                $order_data['head_pm'] = "Keltz, Heather";
+                if (!empty($order_data['head_pm'])) {
+                    $head_pm = $this->format_name($order_data['head_pm']);
+                    $this->edge_service->assign_user_to_role(
+                        $head_pm,
+                        $this->roles['head_pm'],
+                        $workspace->hash,
+                        'Head of PM'
+                    );
+                }
+            });
         }
 
         return $cd_workspace;
@@ -441,12 +646,12 @@ class SyncService {
     /**
      * Syncs a FatTail drop with CD.
      *
-     * @param $drop_id The FatTail drop id.
-     * @param $cd_workspace The Workspace the milestone will be under.
-     * @param $drop_data The FatTail drop data.
-     * @param $drop_milestone_property_id The dynamic property id
+     * @param $drop_id integer object The FatTail drop.
+     * @param $cd_workspace Workspace The Workspace the milestone will be under.
+     * @param $drop_data array The FatTail drop data.
+     * @param $drop_milestone_property_id integer The dynamic property id
      *                                    of the FatTail drop.
-     * @return A Milestone that represents a CD milestone.
+     * @return Option A Milestone that represents a CD milestone.
      */
     private
     function sync_drop(
@@ -456,77 +661,61 @@ class SyncService {
         $drop_milestone_property_id
     ) {
 
-        $cd_milestone = $cd_workspace->find_milestone_by_c_drop_id(
-            $drop_id
-        );
+        $created = false;
+        // Try finding it in the cache
+        $cd_milestone = $this->cache->get_milestone_by_drop_id($drop_id);
 
-        if ($cd_milestone === null && $drop_data['milestone_id']) {
-            // See if drop exists in cd
+        if ($cd_milestone->isEmpty()) {
+            // Try finding it by hash through Edge
             $cd_milestone = $this->edge_service->get_cd_milestone($drop_data['milestone_id']);
-
-            if ($cd_milestone !== null) {
-                $cd_workspace->add_milestone($cd_milestone);
-            }
         }
 
+        if ($cd_milestone->isEmpty()) {
+            // Couldn't find it in cache or by iMC API hash so try searching under parent space
+            foreach ($this->edge_service->get_cd_milestones($cd_workspace->hash) as $milestone) {
+                /* @var $milestone Milestone */
+                $this->cache->add_milestone($milestone);
+            }
+
+            $cd_milestone = $this->cache->get_milestone_by_drop_id($drop_id);
+        }
+
+        $custom_fields = [
+            'c_drop_id'              => $drop_id,
+            'c_custom_unit_features' => $drop_data['c_custom_unit_features'],
+            'c_kpi'                  => $drop_data['c_kpi'],
+            'c_drop_cost_new'        => $drop_data['c_drop_cost_new']
+        ];
         $milestone_name = $drop_data['name'] . '-' . $drop_id;
 
-        if ($cd_milestone === null) {
-            // Check local workspace cache
-            $cd_milestone = $cd_workspace->find_milestone_by_name($milestone_name);
+        if ($cd_milestone->isEmpty()) {
 
-            if ($cd_milestone === null) {
-                // Try to check the workspace's existing milestones in CD
-                foreach ($this->edge_service->get_cd_milestones($cd_workspace->hash) as $milestone) {
-                    $cd_workspace->add_milestone($milestone);
-
-                    if (trim($milestone->name) === trim($milestone_name)) {
-                        $cd_milestone = $milestone;
-                    }
-                }
-            }
+            $cd_milestone = $this->edge_service->create_cd_milestone(
+                $cd_workspace->hash,
+                $milestone_name,
+                $drop_data['description'],
+                $drop_data['start_date'],
+                $drop_data['end_date'],
+                $custom_fields
+            )
+            ->forAll(function(Milestone $milestone) use (&$created) {
+                $created = true;
+            });
         }
+        else {
+            $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop_id, $drop_data);
+            if ($this->fattail_overwrite || $should_process) {
+                $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
 
-        $drop_checksum_old = $this->diff_service->get_loaded_checksum(DiffService::ORDERS_TYPE, $drop_id);
-        $drop_checksum = $this->diff_service->generate_checksum($drop_data);
-
-        if (is_null($drop_checksum_old) || $drop_checksum_old !== $drop_checksum) {
-            // We have a new or changed order
-            $drop = $this->fattail_service->get_drop_by_id($drop_id);
-
-            if (!empty($drop_data['package_drop_id'])) {
-                $drop->ParentDropID = $drop_data['package_drop_id'];
-            }
-
-            $custom_fields = [
-                'c_drop_id' => $drop->DropID,
-                'c_custom_unit_features' => $drop_data['c_custom_unit_features'],
-                'c_kpi' => $drop_data['c_kpi'],
-                'c_drop_cost_new' => $drop_data['c_drop_cost_new']
-            ];
-
-            if ($cd_milestone === null) {
-
-                $cd_milestone = $this->edge_service->create_cd_milestone(
-                    $cd_workspace->hash,
-                    $milestone_name,
-                    $drop_data['description'],
-                    $drop_data['start_date'],
-                    $drop_data['end_date'],
-                    $custom_fields
-                );
-
-                $cd_workspace->add_milestone($cd_milestone);
-            } else {
-
-                $status = $this->edge_service->update_cd_milestone(
-                    $cd_milestone->hash,
-                    $milestone_name,
-                    $drop_data['description'],
-                    $drop_data['start_date'],
-                    $drop_data['end_date'],
-                    $custom_fields
-                );
+                    return $this->edge_service->update_cd_milestone(
+                        $milestone->hash,
+                        $milestone_name,
+                        $drop_data['description'],
+                        $drop_data['start_date'],
+                        $drop_data['end_date'],
+                        $custom_fields
+                    );
+                })->getOrElse(false);
 
                 if (!$status) {
                     $this->logger->warning(
@@ -534,11 +723,30 @@ class SyncService {
                     );
                 }
             }
+        }
 
-            if (
-                $this->fattail_overwrite ||
-                !$this->is_valid_hash($drop_data['milestone_id'])
-            ) {
+        $cd_milestone->forAll(function(Milestone $milestone) {
+            $this->cache->add_milestone($milestone);
+        });
+
+        // Add tasklist to milestone
+        $name_parts = explode('|', $drop_data['name']);
+        $drop_type  = $name_parts[count($name_parts) - 1];
+
+        // Get hash from drop type
+        $tasklist_templates = isset($this->tasklist_templates[$drop_type]) ?
+            $this->tasklist_templates[$drop_type] : [];
+
+        if (($this->fattail_overwrite || $created || $drop_data['milestone_id'] === '')) {
+
+            $drop = $this->fattail_service->get_drop_by_id($drop_id);
+
+            $package_drop_id = $drop_data['package_drop_id'];
+            if (!empty($package_drop_id)) {
+                $drop->ParentDropID = $package_drop_id;
+            }
+
+            $cd_milestone->forAll(function(Milestone $milestone) use ($drop, $drop_milestone_property_id) {
 
                 // Only need to update Drop DynamicPropertyValue
                 // if it doesn't have one
@@ -549,11 +757,11 @@ class SyncService {
                     $this->fattail_service->update_dynamic_properties(
                         $dynamic_properties,
                         $drop_milestone_property_id,
-                        $cd_milestone->hash
+                        $milestone->hash
                     );
 
                 $this->fattail_service->update_drop($drop);
-            }
+            });
         }
 
         return $cd_milestone;
@@ -563,8 +771,8 @@ class SyncService {
      * Converts a value into a value using only arrays.
      * Only works on public members.
      *
-     * @param $thing The value to be converted.
-     * @return The value using only arrays.
+     * @param $thing array|object The value to be converted.
+     * @return array The value using only arrays.
      */
     private
     function convert_to_arrays($thing) {
@@ -589,211 +797,15 @@ class SyncService {
     }
 
     /**
-     * Check if a hash string is valid.
-     *
-     * @param $hash
+     * Determines whether to filter out a row. Returns true
+     * if row should be filtered out (not processed), false otherwise.
+     * @param array $row
+     * @param array $col_map
      * @return bool
      */
     private
-    function is_valid_hash($hash) {
+    function filter_row(array $row, $col_map) {
 
-        if (empty($hash)) {
-            return false;
-        }
-
-        return !preg_match('/[^a-z0-9]/i', $hash);
+        return strpos($row[$col_map['Position Path']], 'HDM') === false;
     }
-    
-    
-    /**
-     * Syncs Edge and FatTail.
-     */
-    public
-    function sync($report_name = '') {
-
-        $this->logger->info("Starting report sync.\n");
-
-        $report = $this->fattail_service
-                  ->get_saved_report_info_by_name($report_name);
-
-        if ($report === null) {
-            $this->logger->error("Unable to find requested report. Exiting.\n");
-            exit;
-        }
-
-        $start_date = date('m/d/Y');
-        $end_date   = date('m/d/Y', strtotime('+' . $this->report_span . ' years'));
-
-        $csv_path = $this->download_report_csv(
-            $report,
-            $this->tmp_dir,
-            $start_date,
-            $end_date
-        );
-        
-        //$csv_path = "/tmp/4071.csv";
-        
-        $reader = Reader::createFromPath($csv_path);
-        $rows = $reader->fetchAll();
-
-        $order_workspace_property_id = $this
-                                       ->fattail_service
-                                       ->get_order_dynamic_property_id(
-                                           $this->WORKSPACE_DYNAMIC_PROP_NAME
-                                       );
-
-        $drop_milestone_property_id = $this
-                                      ->fattail_service
-                                      ->get_drop_dynamic_property_id(
-                                          $this->MILESTONE_DYNAMIC_PROP_NAME
-                                      );
-
-        // Create mapping of column name with column index
-        // Not necessary, but makes it easier to work with the data.
-        // Can remove if optimization issues arise because of this
-        $col_map = [];
-        foreach ($rows[0] as $index => $name) {
-            $col_map[$name] = $index;
-        }
-
-        $this->logger->info("Preparing to sync data. This may take some time. Feel like taking a coffee break?\n");
-
-        $this->prepare_cache();
-        $this->diff_service->load_from_file();
-        
-        // Iterate over CSV and process data
-        // Skip the first and last rows since they
-        // don't have the data we need
-        for ($i = 1, $len = count($rows); $i < $len; $i++) {
-
-            $row = $rows[$i];
-
-            if (
-                count($row) === 1 || // Empty rows
-                strpos($row[$col_map['Position Path']], 'HDM') === false
-            ) {
-                // Skip Non HDM items and custom
-                continue;
-            }
-
-
-            $this->logger->info("Processing next item. Please wait.");
-
-            try {
-                // Get client details
-                $client_id = $row[$col_map['Client ID']];
-                $client = $this->fattail_service->get_client_by_id($client_id);
-
-                // Get order details
-                $order_id = $row[$col_map['Campaign ID']];
-
-                // Get drop details
-                $drop_id = $row[$col_map['Drop ID']];
-            }
-            catch (\Exception $e) {
-                continue;
-            }
-
-            // Process the client
-            try {
-                $cd_account = $this->sync_client($client);
-            }
-            catch (\Exception $e) {
-
-                $this->logger->error(
-                    'Failed to sync client. Skipping the workspace and milestone.',
-                    ['Client ID' => $client->ClientID]
-                );
-
-                continue;
-            }
-
-            $order_data = [
-                'campaign_name'         => $row[$col_map['Campaign Name']],
-                'c_campaign_status'     => $row[$col_map['IO Status']],
-                'c_campaign_start_date' => $row[$col_map['Campaign Start Date']],
-                'c_campaign_end_date'   => $row[$col_map['Campaign End Date']],
-                'workspace_id'          => $row[$col_map['(Campaign) CD Workspace ID']],
-                'sales_rep'             => $row[$col_map['Sales Rep']],
-                'c_hdm_pm'              => $row[$col_map['HDM | Project Manager']],
-                'c_hdm_tam'             => $row[$col_map['Operations Contact']],
-                'c_total_order_revenue' => $row[$col_map['Total Campaign Value']],
-                'c_account_manager'     => $row[$col_map['HDM | Account Manager']],
-            ];
-
-            // Process the order
-            // Sync the order if it's new or changed
-            try {
-                $cd_workspace = $this->sync_order(
-                    $order_id,
-                    $cd_account,
-                    $order_data,
-                    $order_workspace_property_id
-                );
-            }
-            catch (\Exception $e) {
-
-                $this->logger->error(
-                    'Failed to sync order. Skipping the milestone.',
-                    ['Order ID' => $order_id]
-                );
-
-                continue;
-            }
-
-            $this->diff_service->add_item(DiffService::ORDERS_TYPE, $order_id, $order_data);
-            
-            //If Custom Unit is set and equal to true, sync milestones
-            if(isset($col_map['(Drop) Custom Unit']) &&
-               strtolower($row[$col_map['(Drop) Custom Unit']]) == "true")
-            { 
-                $milestone_data = [
-                    'name'                   => $row[$col_map['Position Path']],
-                    'description'            => $row[$col_map['Drop Description']],
-                    'start_date'             => $row[$col_map['Start Date']],
-                    'end_date'               => $row[$col_map['End Date']],
-                    'c_custom_unit_features' => $row[$col_map['(Drop) Custom Unit Features']],
-                    'c_kpi'                  => $row[$col_map['(Drop) Line Item KPI']],
-                    'c_drop_cost_new'        => $row[$col_map['Sold Amount']],
-                    'milestone_id'           => $row[$col_map['(Drop) CD Milestone ID']],
-                    'package_drop_id'        => $row[$col_map['Package Drop ID']],
-                ];
-                
-                try {
-                
-                    $cd_milestone = $this->sync_drop(
-                        $drop_id,
-                        $cd_workspace,
-                        $milestone_data,
-                        $drop_milestone_property_id
-                    );
-                }
-                catch (\Exception $e) {
-                
-                    $this->logger->error(
-                        'Failed to sync drop. Continuing.',
-                        ['Drop ID' => $drop_id]
-                    );
-                
-                    continue;
-                }
-                
-                $this->diff_service->add_item(DiffService::DROPS_TYPE, $drop_id, $milestone_data);
-            }
-
-        }
-
-        $this->diff_service->save_to_file();
-
-        $this->logger->info("Finished report sync.\n");
-
-        $this->logger->info("Cleaning up temporary CSV report.\n");
-        $this->clean_up($this->tmp_dir);
-        $this->logger->info("Finished cleaning up CSV report.\n");
-
-        $this->logger->info("Done.\n");
-    }
-    
-    
-    
 }

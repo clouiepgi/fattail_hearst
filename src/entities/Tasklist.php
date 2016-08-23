@@ -6,6 +6,11 @@ class Tasklist extends Entity {
 
     public $name;
 
+    /**
+     * Tasklist constructor.
+     * @param $hash string
+     * @param $name string
+     */
     public
     function __construct($hash, $name) {
 

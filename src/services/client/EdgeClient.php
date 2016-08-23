@@ -10,7 +10,6 @@
 namespace CentralDesktop\FatTail\Services\Client;
 
 use CentralDesktop\FatTail\Services\Auth\EdgeAuth;
-
 use Exception;
 use Psr\Log\LoggerAwareTrait;
 
@@ -49,12 +48,12 @@ class EdgeClient {
     /**
      * Calls get requests to an Edge API endpoint.
      *
-     * @param $path The path for the resource.
-     * @param $query_params The query string parameters in array key value form.
-     * @param $content_array The content to send in array format.
-     * @param $attempts The number of times to try an request before giving up
+     * @param $path string The path for the resource.
+     * @param $query_params array The query string parameters in array key value form.
+     * @param $content_array array The content to send in array format.
+     * @param $attempts integer The number of times to try an request before giving up
      *
-     * @return guzzlehttp response
+     * @return object response
      */
     public
     function call($method, $path, $query_params = [], $content_array = [], $attempts = 3) {
@@ -116,8 +115,8 @@ class EdgeClient {
     /**
      * Builds the complete resource URL.
      *
-     * @param $path The path to the resource.
-     * @return The complete URL to the resource.
+     * @param $path string The path to the resource.
+     * @return string The complete URL to the resource.
      */
     private
     function get_url($path, $query_params = []) {
@@ -135,7 +134,8 @@ class EdgeClient {
     /**
      * Builds the headers for API request.
      *
-     * @return an array representing the header keys and values
+     * @param array array of headers
+     * @return array representing the header keys and values
      */
     private
     function get_headers($other_headers) {

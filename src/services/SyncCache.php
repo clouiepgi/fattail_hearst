@@ -3,29 +3,98 @@
 namespace CentralDesktop\FatTail\Services;
 
 use CentralDesktop\FatTail\Entities\Account;
+use CentralDesktop\FatTail\Entities\Milestone;
+use CentralDesktop\FatTail\Entities\TasklistTemplate;
+use CentralDesktop\FatTail\Entities\Workspace;
+use PhpCollection\Sequence;
+use PhpOption\None;
+use PhpOption\Option;
 
 class SyncCache {
 
     private $accounts           = [];
     private $workspaces         = [];
+    private $milestones         = [];
     private $users              = [];
+    private $clients            = [];
+    private $orders             = [];
     private $tasklist_templates = [];
 
     /**
-     * Sets the accounts.
-     *
-     * @param $accounts An array of Accounts.
+     * Sets the FatTail clients and hashes them by client id
+     * @param array $clients
      */
     public
-    function set_accounts($accounts) {
+    function set_clients(array $clients = []) {
+        $this->clients = (new Sequence($clients))
+            ->foldLeft([], function($clients, $client) {
+                $clients[$client->ClientID] = $client;
+                return $clients;
+            });
+    }
 
-        $this->accounts = $accounts;
+    /**
+     * Adds a client to the cache.
+     * @param $client object A client object
+     */
+    public
+    function add_client($client) {
+        $this->clients[$client->ClientID] = $client;
+    }
+    /**
+     * Gets a client by id.
+     * @param $id integer
+     * @return Option The client with $id
+     */
+    public
+    function get_client($id) {
+        if (!isset($this->clients[$id])) {
+            return None::create();
+        }
+
+        return Option::fromValue($this->clients[$id]);
+    }
+
+    /**
+     * Adds an order to the cache.
+     * @param $order
+     */
+    public
+    function add_order($order) {
+        $this->orders[$order->OrderID] = $order;
+    }
+
+    /**
+     * Gets an order from cache.
+     * @param $id
+     * @return Option
+     */
+    public
+    function get_order($id) {
+        if (!isset($this->orders[$id])) {
+            return None::create();
+        }
+        return Option::fromValue($this->orders[$id]);
+    }
+
+    /**
+     * Sets the accounts and hashes them by c_client_id.
+     *
+     * @param $accounts array An array of Accounts.
+     */
+    public
+    function set_accounts(array $accounts = []) {
+        $this->accounts = (new Sequence($accounts))
+            ->foldLeft([], function(array $accounts, Account $account) {
+                $accounts[$account->c_client_id] = $account;
+                return $accounts;
+            });
     }
 
     /**
      * Sets the users.
      *
-     * @param $users An array of Users.
+     * @param $users array An array of Users.
      */
     public
     function set_users($users) {
@@ -36,7 +105,7 @@ class SyncCache {
     /**
      * Returns the array of users.
      *
-     * @return An array of Users.
+     * @return array An array of Users.
      */
     public
     function get_users() {
@@ -47,46 +116,44 @@ class SyncCache {
     /**
      * Adds an Account.
      *
-     * @param $account A Account.
+     * @param $account Account A Account.
      */
     public
     function add_account(Account $account) {
-
         $this->accounts[$account->c_client_id] = $account;
     }
 
     /**
      * Finds an Account by the FatTail client id.
      *
-     * @param $c_client_id The FatTail client id.
-     * @return The account with $c_client_id or null if not found.
+     * @param $c_client_id integer The FatTail client id.
+     * @return Option The account with $c_client_id or null if not found.
      */
     public
     function find_account_by_c_client_id($c_client_id) {
 
         if (array_key_exists($c_client_id, $this->accounts)) {
-            return $this->accounts[$c_client_id];
+            return Option::fromValue($this->accounts[$c_client_id]);
         }
 
-        return null;
+        return None::create();
     }
 
     /**
-     * Adds a tasklist template to the cache.
+     * Sets the tasklist templates
      *
-     * @param $name The name of the tasklist template
-     * @param $hash The tasklist template hash.
+     * @param $templates array
      */
     public
-    function set_tasklist_templates($templates) {
+    function set_tasklist_templates(array $templates) {
         $this->tasklist_templates = $templates;
     }
 
     /**
      * Gets the hash of a tasklist template.
      *
-     * @param $name The name of the tasklist template.
-     * @return The tasklist template hash or null if not found.
+     * @param $name string The name of the tasklist template.
+     * @return TasklistTemplate The tasklist template hash or null if not found.
      */
     public
     function get_tasklist_template($name) {
@@ -99,30 +166,61 @@ class SyncCache {
     }
 
     /**
-     * Sets the cache workspaces.
-     *
-     * @param $workspaces
+     * Adds a workspace to the cache.
+     * @param Workspace $workspace
      */
     public
-    function set_workspaces($workspaces) {
-        $this->workspaces = $workspaces;
+    function add_workspace(Workspace $workspace) {
+        $this->workspaces[$workspace->c_order_id] = $workspace;
     }
 
     /**
-     * Finds a workspace by its name.
+     * Sets the cache workspaces and hashes them by name.
      *
-     * @param $name
-     * @return $hash|null
+     * @param $workspaces array Workspaces hashed by their hash
      */
     public
-    function get_workspace_hash_by_name($name) {
+    function set_workspaces($workspaces) {
+        $this->workspaces = (new Sequence($workspaces))
+            ->foldLeft([], function(array $workspaces, Workspace $workspace) {
+                $workspaces[$workspace->c_order_id] = $workspace;
+                return $workspaces;
+            });
+    }
 
-        foreach ($this->workspaces as $workspace) {
-            if ($workspace->name === $name) {
-                return $workspace;
-            }
+    /**
+     * Finds a workspace by its order id.
+     *
+     * @param $order_id integer the order id
+     * @return Option
+     */
+    public
+    function get_workspace_by_order_id($order_id) {
+        if (!isset($this->workspaces[$order_id])) {
+            return None::create();
         }
+        return Option::fromValue($this->workspaces[$order_id]);
+    }
 
-        return null;
+    /**
+     * Adds a milestone to the cache and hashes it by its drop id.
+     * @param Milestone $milestone
+     */
+    public
+    function add_milestone(Milestone $milestone) {
+        $this->milestones[$milestone->c_drop_id] = $milestone;
+    }
+
+    /**
+     * Fines a workspace by its drop id.
+     * @param $drop_id
+     * @return None|Option
+     */
+    public
+    function get_milestone_by_drop_id($drop_id) {
+        if (!isset($this->milestones[$drop_id])) {
+            return None::create();
+        }
+        return Option::fromValue($this->milestones[$drop_id]);
     }
 }

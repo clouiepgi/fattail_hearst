@@ -1,5 +1,9 @@
+*.orig
+.idea
+*.iml
+/vendor/
+.DS_Store
+/tmp/
+config/cd_config.yml
+config/fattail_config.yml
 data
-tmp
-vendor
-cd_config.yml
-fattail_config.yml

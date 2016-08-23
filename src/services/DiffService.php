@@ -3,7 +3,7 @@ namespace CentralDesktop\FatTail\Services;
 
 /**
  * Class DiffService responsible for keeping track of
- * which records have changed by using checksums (php crc32)
+ * which records have changed by using md5 hashes
  * @package CentralDesktop\FatTail\Services
  */
 class DiffService {
@@ -12,12 +12,13 @@ class DiffService {
     const ORDERS_TYPE = 'orders';
     const DROPS_TYPE = 'drops';
     const SEPARATOR = ':';
-    // Array holding id => checksum (hex) pairs
-    protected $loaded_checksums = [
+
+    // Array holding id => md5 pairs
+    protected $loaded_hashes = [
         self::ORDERS_TYPE => [],
         self::DROPS_TYPE => [],
     ];
-    protected $checksums = [
+    protected $hashes = [
         self::ORDERS_TYPE => [],
         self::DROPS_TYPE => [],
     ];
@@ -65,10 +66,10 @@ class DiffService {
                 if (strpos($line, self::SEPARATOR) > 0) {
 
                     if (!is_null($type)) {
-                        // Break the id => checksum pair and load it into memory
+                        // Break the id => hashch pair and load it into memory
                         $line = explode(self::SEPARATOR, $line);
                         $line = array_map(function($item) { return trim($item); }, $line);
-                        $this->loaded_checksums[$type][$line[0]] = $line[1];
+                        $this->loaded_hashes[$type][$line[0]] = $line[1];
                     }
                 }
                 else {
@@ -81,55 +82,66 @@ class DiffService {
     }
 
     /**
-     * Gets a checksum.
+     * Gets a hash.
      *
      * @param $type
      * @param $id
      * @return mixed
      */
     public
-    function get_loaded_checksum($type, $id) {
+    function get_loaded_hash($type, $id) {
 
-        if (!isset($this->loaded_checksums[$type][$id])) {
+        if (!isset($this->loaded_hashes[$type][$id])) {
             return null;
         }
 
-        return $this->loaded_checksums[$type][$id];
+        return $this->loaded_hashes[$type][$id];
     }
 
     /**
-     * Generates a checksum
+     * Generates a hash
      * @param array $values
      * @return string
      */
     public
-    function generate_checksum(array $values) {
-
-        $joined = join('', $values);
-
-        return sprintf("%x", crc32($joined));
+    function generate_hash(array $values) {
+        return md5(join('', $values));
     }
 
     /**
-     * Adds a checksum to the checksum store.
+     * Determines if an item is different (it's new or there are changes).
      *
-     * @param $type
-     * @param array $value
+     * @param $type string the item type
+     * @param $id integer the item id
+     * @param $values array the values to check
+     * @return bool true if is different, false otherwise
+     */
+    public
+    function is_different($type, $id, array $values = []) {
+        $old_hash = $this->get_loaded_hash($type, $id);
+        $hash = $this->generate_hash($values);
+        return is_null($old_hash) || $old_hash !== $hash;
+    }
+
+    /**
+     * Adds a hash to the hash store.
+     *
+     * @param $type string
+     * @param $id integer
+     * @param $values array
      */
     public
     function add_item($type, $id, array $values = []) {
 
-        if (!isset($this->checksums[$type][$id])) {
-            $checksum = $this->generate_checksum($values);
-            $this->checksums[$type][$id] = $this->loaded_checksums[$type][$id] = $checksum;
+        if (!isset($this->hashes[$type][$id])) {
+            $hash = $this->generate_hash($values);
+            $this->hashes[$type][$id] = $this->loaded_hashes[$type][$id] = $hash;
 
         }
     }
 
-
-
     /**
-     * Save the new checksums to the diff file.
+     * Save the new hashes to the diff file.
      */
     public
     function save_to_file() {
@@ -138,14 +150,14 @@ class DiffService {
         if ($file) {
             // Write orders
             fwrite($file, self::ORDERS_TYPE . "\n");
-            foreach ($this->checksums[self::ORDERS_TYPE] as $id => $checksum) {
-                fwrite($file, join(self::SEPARATOR, [$id, $checksum]) . "\n");
+            foreach ($this->hashes[self::ORDERS_TYPE] as $id => $hash) {
+                fwrite($file, join(self::SEPARATOR, [$id, $hash]) . "\n");
             }
 
             // Write drops
             fwrite($file, self::DROPS_TYPE . "\n");
-            foreach ($this->checksums[self::DROPS_TYPE] as $id => $checksum) {
-                fwrite($file, join(self::SEPARATOR, [$id, $checksum]) . "\n");
+            foreach ($this->hashes[self::DROPS_TYPE] as $id => $hash) {
+                fwrite($file, join(self::SEPARATOR, [$id, $hash]) . "\n");
             }
             fclose($file);
         }

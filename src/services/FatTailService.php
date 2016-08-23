@@ -21,8 +21,8 @@ class FatTailService {
      * Gets the saved report information by
      * saved report name.
      *
-     * @param $name The name of the saved report.
-     * @return Saved report object
+     * @param $name string The name of the saved report.
+     * @return object Saved report object
      */
     public
     function get_saved_report_info_by_name($name) {
@@ -47,7 +47,7 @@ class FatTailService {
     /**
      * Gets a list of saved reports from FatTail
      *
-     * @return An array of saved reports.
+     * @return array An array of saved reports.
      */
     public
     function get_saved_report_list() {
@@ -67,22 +67,22 @@ class FatTailService {
         // Get individual report details
         return $this->client->call(
             'GetSavedReportQuery',
-            [ 'savedReportId' => $report_id ]
+            $this->array_to_object([ 'savedReportId' => $report_id ])
         )->GetSavedReportQueryResult;
     }
 
     /**
      * Runs a FatTail report job.
      *
-     * @param $report_job The report job to run.
-     * @return The FatTail report id.
+     * @param $report_job array The report job to run.
+     * @return integer The FatTail report id.
      */
     public
     function run_report_job($report_job) {
 
         $run_report_job = $this->client->call(
             'RunReportJob',
-            ['reportJob' => $report_job]
+            $this->array_to_object(['reportJob' => $report_job])
         )->RunReportJobResult;
 
         return $run_report_job->ReportJobID;
@@ -91,121 +91,128 @@ class FatTailService {
     /**
      * Gets a report job from FatTail by report job id.
      *
-     * @param $job_id The report job id.
-     * @return The FatTail report job object.
+     * @param $job_id integer The report job id.
+     * @return object The FatTail report job object.
      */
     public
     function get_report_job_by_id($job_id) {
 
         return $this->client->call(
             'GetReportJob',
-            ['reportJobId' => $job_id]
+            $this->array_to_object(['reportJobId' => $job_id])
         )->GetReportJobResult;
     }
 
     /**
      * Gets a report download URL from FatTail by report job id.
      *
-     * @param $job_id The report job id.
-     * @return The FatTail report URL object.
+     * @param $job_id integer The report job id.
+     * @return object The FatTail report URL object.
      */
     public
     function get_report_url_by_id($job_id) {
 
         $report_url_result = $this->client->call(
             'GetReportDownloadUrl',
-            ['reportJobId' => $job_id]
+            $this->array_to_object(['reportJobId' => $job_id])
         );
 
         return $report_url_result->GetReportDownloadURLResult;
     }
 
+    public
+    function get_clients() {
+        return $this->client->call(
+            'GetClientList'
+        )->GetClientListResult->Client;
+    }
+
     /**
      * Queries FatTail for a client by its id.
      *
-     * @param $client_id The FatTail client id.
+     * @param $client_id integer The FatTail client id.
      *
-     * @return The FatTail client object.
+     * @return object The FatTail client object.
      */
     public
     function get_client_by_id($client_id) {
 
         return $this->client->call(
             'GetClient',
-            ['clientId' => $client_id]
+            $this->array_to_object(['clientId' => $client_id])
         )->GetClientResult;
     }
 
     /**
      * Queries FatTail for an order by its id.
      *
-     * @param $order_id The FatTail order id.
+     * @param $order_id integer The FatTail order id.
      *
-     * @return The FatTail order object.
+     * @return object The FatTail order object.
      */
     public
     function get_order_by_id($order_id) {
 
         return $this->client->call(
             'GetOrder',
-            ['orderId' => $order_id]
+            $this->array_to_object(['orderId' => $order_id])
         )->GetOrderResult;
     }
 
     /**
      * Queries FatTail for a drop by its id.
      *
-     * @param $drop_id The FatTail drop id.
+     * @param $drop_id integer The FatTail drop id.
      *
-     * @return The FatTail drop object.
+     * @return object The FatTail drop object.
      */
     public
     function get_drop_by_id($drop_id) {
 
         return $this->client->call(
             'GetDrop',
-            ['dropId' => $drop_id]
+            $this->array_to_object(['dropId' => $drop_id])
         )->GetDropResult;
     }
 
     /**
      * Updates a FatTail client.
      *
-     * @param $client The FatTail client object.
+     * @param $client object The FatTail client object.
      *
-     * @return The response object.
+     * @return object The response object.
      */
     public
     function update_client($client) {
 
         return $this->client->call(
             'UpdateClient',
-            ['client' => $client]
+            $this->array_to_object(['client' => $client])
         );
     }
 
     /**
      * Updates a FatTail order.
      *
-     * @param $order The FatTail order object.
+     * @param $order object The FatTail order object.
      *
-     * @return The response object.
+     * @return object The response object.
      */
     public
     function update_order($order) {
 
         return $this->client->call(
             'UpdateOrder',
-            ['order' => $order]
+            $this->array_to_object(['order' => $order])
         );
     }
 
     /**
      * Updates a FatTail drop.
      *
-     * @param $drop The FatTail drop object.
+     * @param $drop object The FatTail drop object.
      *
-     * @return The response object.
+     * @return object The response object.
      */
     public
     function update_drop($drop) {
@@ -221,7 +228,7 @@ class FatTailService {
 
         return $this->client->call(
             $method,
-            $parameters
+            $this->array_to_object($parameters)
         );
     }
 
@@ -229,8 +236,8 @@ class FatTailService {
      * Finds and returns the id of the order dynamic property
      * in FatTail.
      *
-     * @param $name The name of the order dynamic property.
-     * @return The order dynamic property id if found, else null
+     * @param $name string name of the order dynamic property.
+     * @return integer order dynamic property id if found, else null
      */
     public
     function get_order_dynamic_property_id($name) {
@@ -253,8 +260,8 @@ class FatTailService {
      * Finds and returns the id of the drop dynamic property
      * in FatTail.
      *
-     * @param $name The name of the drop dynamic property.
-     * @return The drop dynamic property id if found, else null
+     * @param $name string The name of the drop dynamic property.
+     * @return integer The drop dynamic property id if found, else null
      */
     public
     function get_drop_dynamic_property_id($name) {
@@ -276,10 +283,10 @@ class FatTailService {
      * Updates or adds a DynamicPropertyValue to
      * an array of DynamicPropertyValues.
      *
-     * @param $properties An array of FatTail DynamicPropertyValues.
-     * @param $id The FatTail DynamicPropertyID.
-     * @param $value The FatTail property value.
-     * @return The updated array of dynamic property values.
+     * @param $properties array An array of FatTail DynamicPropertyValues.
+     * @param $id integer The FatTail DynamicPropertyID.
+     * @param $value string The FatTail property value.
+     * @return array The updated array of dynamic property values.
      */
     public
     function update_dynamic_properties($properties = [], $id, $value) {
@@ -299,7 +306,6 @@ class FatTailService {
         }
 
         if (!$found) {
-
             $property = new \stdClass();
             $property->DynamicPropertyID = $id;
             $property->Value = $value;
@@ -307,5 +313,16 @@ class FatTailService {
         }
 
         return $properties;
+    }
+
+    /**
+     * Converts an array and sub arrays to objects.
+     *
+     * @param array $array
+     * @return mixed
+     */
+    private
+    function array_to_object(array $array = []) {
+        return json_decode(json_encode($array), false);
     }
 }
