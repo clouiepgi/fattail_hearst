@@ -733,6 +733,11 @@ class EdgeService {
             }
 
             $http_response = $this->cd_get($path, $query_params);
+
+            if (!$http_response->isSuccessful()) {
+                return $templates;
+            }
+
             $json = json_decode($http_response->getContent());
 
             if (!empty($json) && !property_exists($json, 'items')) {
