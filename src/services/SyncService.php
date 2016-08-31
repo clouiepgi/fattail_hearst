@@ -16,7 +16,6 @@ use JmesPath;
 use League\Csv\Reader;
 use PhpOption\Option;
 use Psr\Log\LoggerAwareTrait;
-use stdClass;
 
 class SyncService {
     use LoggerAwareTrait;
@@ -513,22 +512,20 @@ class SyncService {
                 $created = true;
             });
         }
-        else {
-            if ($this->fattail_overwrite || $should_process) {
-                $status = $cd_workspace->map(function(Workspace $workspace) use ($custom_fields, $name) {
+        elseif ($this->fattail_overwrite || $should_process) {
+            $status = $cd_workspace->map(function(Workspace $workspace) use ($custom_fields, $name) {
 
-                    return $this->edge_service->update_cd_workspace(
-                        $workspace->hash,
-                        $name,
-                        $custom_fields
-                    );
-                })->getOrElse(false);
+                return $this->edge_service->update_cd_workspace(
+                    $workspace->hash,
+                    $name,
+                    $custom_fields
+                );
+            })->getOrElse(false);
 
-                if (!$status) {
-                    $this->logger->warning(
-                        "Failed to updated a workspace. Continuing."
-                    );
-                }
+            if (!$status) {
+                $this->logger->warning(
+                    "Failed to updated a workspace. Continuing."
+                );
             }
         }
 
@@ -688,6 +685,7 @@ class SyncService {
         ];
         $milestone_name = $drop_data['name'] . '-' . $drop_id;
 
+        $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop_id, $drop_data);
         if ($cd_milestone->isEmpty()) {
 
             $cd_milestone = $this->edge_service->create_cd_milestone(
@@ -702,26 +700,24 @@ class SyncService {
                 $created = true;
             });
         }
-        else {
-            $should_process = $this->diff_service->is_different(DiffService::DROPS_TYPE, $drop_id, $drop_data);
-            if ($this->fattail_overwrite || $should_process) {
-                $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
+        elseif ($this->fattail_overwrite || $should_process) {
 
-                    return $this->edge_service->update_cd_milestone(
-                        $milestone->hash,
-                        $milestone_name,
-                        $drop_data['description'],
-                        $drop_data['start_date'],
-                        $drop_data['end_date'],
-                        $custom_fields
-                    );
-                })->getOrElse(false);
+            $status = $cd_milestone->map(function(Milestone $milestone) use ($custom_fields, $drop_data, $milestone_name) {
 
-                if (!$status) {
-                    $this->logger->warning(
-                        "Failed to updated a milestone. Continuing."
-                    );
-                }
+                return $this->edge_service->update_cd_milestone(
+                    $milestone->hash,
+                    $milestone_name,
+                    $drop_data['description'],
+                    $drop_data['start_date'],
+                    $drop_data['end_date'],
+                    $custom_fields
+                );
+            })->getOrElse(false);
+
+            if (!$status) {
+                $this->logger->warning(
+                    "Failed to updated a milestone. Continuing."
+                );
             }
         }
 
