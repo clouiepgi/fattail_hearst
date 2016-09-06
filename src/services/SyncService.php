@@ -73,7 +73,7 @@ class SyncService {
     public
     function sync($report_name = '') {
 
-        $this->logger->info("Starting report sync.\n");
+        $this->logger->info("Starting report sync (updated).\n");
 
         $report = $this->fattail_service
                   ->get_saved_report_info_by_name($report_name);
