@@ -248,7 +248,7 @@ class SyncService {
         $this->logger->info("Finished report sync.\n");
 
         $this->logger->info("Cleaning up temporary CSV report.\n");
-        $this->clean_up($this->tmp_dir);
+        //$this->clean_up($this->tmp_dir);
         $this->logger->info("Finished cleaning up CSV report.\n");
 
         $this->logger->info("Done.\n");
