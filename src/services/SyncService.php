@@ -186,6 +186,9 @@ class SyncService {
             ];
             $order_id = $row[$col_map['Campaign ID']];
             try {
+
+                $this->logger->info('Syncing order:', $order_data);
+
                 /* @var $cd_workspace Workspace */
                 $cd_workspace = $this->sync_order(
                     $order_id,
