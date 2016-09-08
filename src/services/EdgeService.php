@@ -41,7 +41,8 @@ class EdgeService {
     function create_cd_account($name, $custom_fields = []) {
 
         $this->logger->info('Creating iMeetCentral account', [
-            'name' => $name
+            'name' => $name,
+            'custom_fields' => $custom_fields
         ]);
 
         $details = new \stdClass();
@@ -91,7 +92,10 @@ class EdgeService {
         $custom_fields = []
     ) {
         $this->logger->info('Creating iMeetCentral workspace', [
-            'name' => $name
+            'account_id' => $account_id,
+            'name' => $name,
+            'template_hash' => $template_hash,
+            'custom_fields' => $custom_fields
         ]);
 
         $details = new \stdClass();
@@ -139,7 +143,9 @@ class EdgeService {
         array $custom_fields = []
     ) {
         $this->logger->info('Updating iMeetCentral workspace', [
-            'name' => $name
+            'workspace_id' => $workspace_id,
+            'name' => $name,
+            'custom_fields' => $custom_fields
         ]);
 
         $details = new \stdClass();
@@ -212,7 +218,12 @@ class EdgeService {
         $custom_fields = []
     ) {
         $this->logger->info('Creating iMeetCentral milestone', [
-            'name' => $name
+            'workspace_id' => $workspace_id,
+            'name' => $name,
+            'description' => $description,
+            'start_date' => $start_date,
+            'end_date' => $end_date,
+            'custom_fields' => $custom_fields
         ]);
 
         $details = new \stdClass();
@@ -271,7 +282,12 @@ class EdgeService {
         $custom_fields
     ) {
         $this->logger->info('Updating iMeetCentral milestone', [
-            'name' => $name
+            'milestone_id' => $milestone_id,
+            'name' => $name,
+            'description' => $description,
+            'start_date' => $start_date,
+            'end_date' => $end_date,
+            'custom_fields' => $custom_fields
         ]);
 
         $details = new \stdClass();

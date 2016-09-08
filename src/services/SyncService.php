@@ -138,7 +138,7 @@ class SyncService {
                 continue;
             }
 
-            $this->logger->info("Processing next item. Please wait.");
+            //$this->logger->info("Processing next item. Please wait.");
 
             // Process the client
             // Get client details
@@ -186,8 +186,6 @@ class SyncService {
             ];
             $order_id = $row[$col_map['Campaign ID']];
             try {
-
-                $this->logger->info('Syncing order:', $order_data);
 
                 /* @var $cd_workspace Workspace */
                 $cd_workspace = $this->sync_order(
