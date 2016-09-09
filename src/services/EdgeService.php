@@ -871,7 +871,7 @@ class EdgeService {
                         $name         = strtolower($user->details->fullName);
                         $users[$name] = $user->id;
                         $this->logger->info('Adding user to cache', [
-                            'user' => $user
+                            'user' => $user->details->fullName
                         ]);
                     }
                 }
