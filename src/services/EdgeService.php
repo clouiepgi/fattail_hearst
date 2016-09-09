@@ -854,7 +854,7 @@ class EdgeService {
 
         $users = $this->cache->get_users();
 
-        if ($users === null) {
+        if (empty($users)) {
             // Cache hasn't been set yet
 
             $params = ['limit' => 100];
